@@ -1,6 +1,7 @@
 import argparse
 import atexit
 import os
+import shutil
 import sys
 import time
 
@@ -28,6 +29,18 @@ def format_time(seconds: float) -> str:
     mins = int(seconds) // 60
     secs = int(seconds) % 60
     return f"{mins:02d}:{secs:02d}"
+
+
+def create_progress_bar(current: int, total: int, bar_length: int = 14) -> str:
+    """Creates a sleek visual progress scrubber bar: ━━━━●──────────"""
+    if total <= 0:
+        return f"\033[90m{'─' * bar_length}\033[0m"
+    ratio = min(1.0, max(0.0, current / total))
+    pos = int(ratio * (bar_length - 1))
+    left = "━" * pos
+    head = "●"
+    right = "─" * (bar_length - 1 - pos)
+    return f"\033[97m{left}{head}\033[90m{right}\033[0m"
 
 
 def play_bad_apple(
@@ -79,6 +92,7 @@ def play_bad_apple(
         audio_player.start()
 
     renderer = TerminalRenderer(mode=mode, target_width=target_width, target_height=target_height)
+    last_terminal_size = shutil.get_terminal_size()
 
     current_frame_idx = 0
     playback_start_time = time.perf_counter()
@@ -163,26 +177,48 @@ def play_bad_apple(
                 break
             current_frame_idx += 1
 
-            # 3. Render Frame
+            # 3. Check for terminal resize (Responsive Resizing)
+            current_terminal_size = shutil.get_terminal_size()
+            if current_terminal_size != last_terminal_size:
+                last_terminal_size = current_terminal_size
+                # Clear screen to wipe any ghost artifacts from the previous size
+                sys.stdout.write("\033[2J")
+                sys.stdout.flush()
+
+            # 4. Render Frame
             rendered_str = renderer.render_frame(frame)
 
-            # 4. Status Bar
+            # 5. Status Bar with Visual Scrubber
             cur_time_str = format_time(current_frame_idx / fps)
             tot_time_str = format_time(duration)
             mode_display = {
-                "halfblock": "Half Block [▀▄]",
-                "ascii": "ASCII [.::*#@]",
-                "braille": "Braille [⠶⠷]",
+                "halfblock": "Half Block",
+                "ascii": "ASCII",
+                "braille": "Braille",
             }.get(renderer.mode, renderer.mode)
+
+            cols = current_terminal_size.columns
+            if cols < 85:
+                bar_len = 8
+                controls_str = "[Space: || | Q: Quit]"
+            elif cols < 110:
+                bar_len = 12
+                controls_str = "[Space: Pause | M: Mode | Q: Quit]"
+            else:
+                bar_len = 16
+                controls_str = "[Space: Pause | M: Mode | ←/→: Seek | Q: Quit]"
+
+            bar_widget = create_progress_bar(current_frame_idx, total_frames, bar_length=bar_len)
 
             status_bar = (
                 f"\033[90m[{cur_time_str}/{tot_time_str}] "
-                f"Mode: \033[97m{mode_display}\033[90m | "
-                f"Frame: {current_frame_idx}/{total_frames} | "
-                f"[Space: Pause | M: Mode | ←/→: Seek | Q: Quit]\033[0m"
+                f"{bar_widget} "
+                f"\033[90m[Frame: {current_frame_idx}/{total_frames} | "
+                f"Mode: \033[97m{mode_display}\033[90m] "
+                f"{controls_str}\033[0m"
             )
 
-            # 5. Write buffer to terminal in one write (Flicker-Free)
+            # 6. Write buffer to terminal in one write (Flicker-Free)
             sys.stdout.write(f"\033[H{rendered_str}\n{status_bar}")
             sys.stdout.flush()
 
