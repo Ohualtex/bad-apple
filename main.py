@@ -19,8 +19,100 @@ from download import download_audio, download_video
 from renderer import TerminalRenderer
 
 
+_global_input_handler = None
+
+
+class InputHandler:
+    """
+    Cross-platform non-blocking keyboard input listener supporting
+    Windows (msvcrt) and POSIX systems / Linux / macOS (termios / select).
+    """
+
+    def __init__(self):
+        self.is_windows = os.name == "nt"
+        self._old_settings = None
+        self._fd = None
+        self._termios = None
+
+        if not self.is_windows:
+            try:
+                import termios
+                import tty
+
+                self._termios = termios
+                self._tty = tty
+                self._fd = sys.stdin.fileno()
+                self._old_settings = self._termios.tcgetattr(self._fd)
+                self._tty.setcbreak(self._fd)
+            except Exception:
+                self._termios = None
+
+    def get_key(self) -> str | None:
+        """
+        Polls for a key press without blocking.
+        Returns normalized key names: 'SPACE', 'QUIT', 'MODE', 'RESTART', 'LEFT', 'RIGHT' or None.
+        """
+        if self.is_windows:
+            if msvcrt and msvcrt.kbhit():
+                ch = msvcrt.getch()
+                if ch in (b"\x00", b"\xe0"):
+                    sub = msvcrt.getch()
+                    if sub == b"M":
+                        return "RIGHT"
+                    elif sub == b"K":
+                        return "LEFT"
+                    return None
+                elif ch == b" ":
+                    return "SPACE"
+                elif ch in (b"q", b"Q", b"\x1b"):
+                    return "QUIT"
+                elif ch in (b"m", b"M"):
+                    return "MODE"
+                elif ch in (b"r", b"R"):
+                    return "RESTART"
+            return None
+        else:
+            if not self._termios or self._fd is None:
+                return None
+            import select
+
+            rlist, _, _ = select.select([sys.stdin], [], [], 0)
+            if rlist:
+                ch = sys.stdin.read(1)
+                if ch == "\x1b":
+                    r2, _, _ = select.select([sys.stdin], [], [], 0.02)
+                    if r2:
+                        seq = sys.stdin.read(2)
+                        if seq == "[C":
+                            return "RIGHT"
+                        elif seq == "[D":
+                            return "LEFT"
+                        return None
+                    return "QUIT"
+                elif ch == " ":
+                    return "SPACE"
+                elif ch in ("q", "Q"):
+                    return "QUIT"
+                elif ch in ("m", "M"):
+                    return "MODE"
+                elif ch in ("r", "R"):
+                    return "RESTART"
+            return None
+
+    def restore(self):
+        """Restores original terminal attributes on POSIX systems."""
+        if not self.is_windows and self._termios and self._old_settings and self._fd is not None:
+            try:
+                self._termios.tcsetattr(self._fd, self._termios.TCSADRAIN, self._old_settings)
+            except Exception:
+                pass
+
+
 def restore_terminal():
     """Restores terminal settings, cursor visibility, and main screen buffer."""
+    global _global_input_handler
+    if _global_input_handler:
+        _global_input_handler.restore()
     sys.stdout.write("\033[?25h\033[0m\033[?1049l\n")
     sys.stdout.flush()
 
@@ -94,6 +186,9 @@ def play_bad_apple(
 
     renderer = TerminalRenderer(mode=mode, target_width=target_width, target_height=target_height)
     last_terminal_size = shutil.get_terminal_size()
+    global _global_input_handler
+    input_handler = InputHandler()
+    _global_input_handler = input_handler
 
     current_frame_idx = 0
     playback_start_time = time.perf_counter()
@@ -105,51 +200,48 @@ def play_bad_apple(
 
     try:
         while True:
-            # 1. Process keyboard inputs (msvcrt)
-            if msvcrt and msvcrt.kbhit():
-                ch = msvcrt.getch()
-                if ch in (b"\x00", b"\xe0"):  # Special keys (e.g. arrow keys)
-                    sub = msvcrt.getch()
-                    if sub == b"M":  # Right arrow -> +5s
-                        new_frame = min(total_frames - 1, current_frame_idx + int(5 * fps))
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
-                        current_frame_idx = new_frame
-                        now = time.perf_counter()
-                        playback_start_time = now - (current_frame_idx / fps)
-                        if audio_player:
-                            audio_player.seek(current_frame_idx / fps)
-                    elif sub == b"K":  # Left arrow -> -5s
-                        new_frame = max(0, current_frame_idx - int(5 * fps))
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
-                        current_frame_idx = new_frame
-                        now = time.perf_counter()
-                        playback_start_time = now - (current_frame_idx / fps)
-                        if audio_player:
-                            audio_player.seek(current_frame_idx / fps)
-                elif ch in (b"q", b"Q", b"\x1b"):  # Exit (Q or ESC)
-                    break
-                elif ch == b" ":  # Pause / Resume
-                    is_paused = not is_paused
-                    if is_paused:
-                        pause_start_time = time.perf_counter()
-                        if audio_player:
-                            audio_player.pause()
-                    else:
-                        pause_duration = time.perf_counter() - pause_start_time
-                        playback_start_time += pause_duration
-                        if audio_player:
-                            audio_player.resume()
-                elif ch in (b"m", b"M"):  # Switch mode
-                    mode_idx = (mode_idx + 1) % len(mode_list)
-                    renderer.mode = mode_list[mode_idx]
-                elif ch in (b"r", b"R"):  # Restart from beginning
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    current_frame_idx = 0
-                    playback_start_time = time.perf_counter()
+            # 1. Process keyboard inputs (Cross-platform)
+            key = input_handler.get_key()
+            if key == "RIGHT":  # Seek +5s
+                new_frame = min(total_frames - 1, current_frame_idx + int(5 * fps))
+                cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+                current_frame_idx = new_frame
+                now = time.perf_counter()
+                playback_start_time = now - (current_frame_idx / fps)
+                if audio_player:
+                    audio_player.seek(current_frame_idx / fps)
+            elif key == "LEFT":  # Seek -5s
+                new_frame = max(0, current_frame_idx - int(5 * fps))
+                cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+                current_frame_idx = new_frame
+                now = time.perf_counter()
+                playback_start_time = now - (current_frame_idx / fps)
+                if audio_player:
+                    audio_player.seek(current_frame_idx / fps)
+            elif key == "QUIT":  # Exit (Q or ESC)
+                break
+            elif key == "SPACE":  # Pause / Resume
+                is_paused = not is_paused
+                if is_paused:
+                    pause_start_time = time.perf_counter()
                     if audio_player:
-                        audio_player.seek(0)
+                        audio_player.pause()
+                else:
+                    pause_duration = time.perf_counter() - pause_start_time
+                    playback_start_time += pause_duration
+                    if audio_player:
                         audio_player.resume()
-                    is_paused = False
+            elif key == "MODE":  # Switch mode
+                mode_idx = (mode_idx + 1) % len(mode_list)
+                renderer.mode = mode_list[mode_idx]
+            elif key == "RESTART":  # Restart from beginning
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                current_frame_idx = 0
+                playback_start_time = time.perf_counter()
+                if audio_player:
+                    audio_player.seek(0)
+                    audio_player.resume()
+                is_paused = False
 
             # If paused, sleep briefly
             if is_paused:
