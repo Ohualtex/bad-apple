@@ -8,9 +8,9 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
   - `halfblock` (Default): 2x vertical resolution using half-block characters (`▀`, `▄`) for crystal-clear silhouettes.
   - `braille`: Ultra high-resolution rendering using Unicode Braille (2x4 matrix) characters.
   - `ascii`: Classic nostalgic ASCII shading (` .:-=+*#%@`).
-- **Cross-Platform & Zero Extra Audio Dependencies:** Runs natively on Windows (`winmm.dll` MCI), macOS (`afplay`), and Linux (`ffplay`/`mpv`/`aplay`) with zero additional Python audio packages.
+- **Zero-Setup & Auto-Provisioning:** Clones and runs immediately! Automatically installs missing dependencies (`opencv-python-headless`, `colorama`, `pygame`) and downloads video/audio assets with MD5 checksum verification.
+- **Cross-Platform Audio Engine:** Backed by `pygame.mixer` for distortion-free pause/resume and zero-latency seeking, with fallback to native OS drivers on Windows (`winmm.dll` MCI), macOS (`afplay`), and Linux (`ffplay`/`mpv`/`aplay`).
 - **Flicker-Free & Ghost-Free Rendering:** Employs Alternate Screen Buffer (`\033[?1049h`), scrollback buffer purging, and dynamic resizing for a pristine, clean display at 30 FPS.
-- **Automatic & Verified Download:** Automatically fetches the original Nico Nico Douga Bad Apple video over HTTPS from Archive.org with MD5 checksum verification.
 - **Dynamic Sizing & Visual Scrubber:** Automatically senses terminal dimensions, preserves the 4:3 aspect ratio, centers output, and displays an interactive progress bar.
 
 ## Controls
@@ -24,21 +24,19 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
 | **R** | Restart playback |
 | **Q / Esc** | Quit |
 
-## Installation & Usage
+## Quick Start (Zero-Setup)
 
-Required dependencies:
-```bash
-pip install opencv-python-headless colorama
-```
+Just clone and run! Required dependencies and media files are automatically prepared on first launch:
 
-Optional (recommended for high-fidelity audio seeking & pause on macOS/Linux):
 ```bash
-pip install pygame
-```
-
-To run the player:
-```bash
+git clone https://github.com/Ohualtex/bad-apple.git
+cd bad-apple
 python main.py
+```
+
+*(Optional) If you prefer installing dependencies manually:*
+```bash
+pip install opencv-python-headless colorama pygame
 ```
 
 ### Options & Flags
@@ -60,8 +58,7 @@ python main.py --width 100 --height 35
   The default macOS Terminal.app adds vertical font leading (line spacing) between lines. To achieve a seamless, OLED-smooth display:
   1. Open **Terminal** → **Settings** (`Cmd + ,`) → **Profiles** → **Text**.
   2. Click **Change...** under Font.
-  3. Set the **Line Spacing** slider to **`0.85`** (or use modern terminals like [iTerm2](https://iterm2.com/), [Ghostty](https://ghostty.org/), or [Kitty](https://sw.kovidgoyal.net/kitty/) which render box-drawing characters gaplessly by default).
-- **Fast Audio Seeking & Seamless Pause:**  
-  While macOS includes native `afplay` out of the box, installing `pygame` (`pip install pygame`) or `ffmpeg` (`brew install ffmpeg`) automatically enables instant zero-latency audio seeking with `←` / `→` arrow keys and distortion-free pause/resume.
+  3. Expand the font window downward if needed, and set the **Line Spacing** slider to **`0.85`**.
+  4. Alternatively, press **`M`** to switch to **Braille mode** (which is naturally immune to line spacing), or use modern terminals like [iTerm2](https://iterm2.com/), [Ghostty](https://ghostty.org/), or [Kitty](https://sw.kovidgoyal.net/kitty/).
 
 
