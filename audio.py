@@ -5,14 +5,22 @@ import signal
 import subprocess
 import sys
 
+try:
+    import pygame.mixer
+
+    _HAS_PYGAME = True
+except Exception:
+    _HAS_PYGAME = False
+
 
 class AudioPlayer:
     """
     Cross-platform built-in audio player supporting:
+    - Universal: pygame.mixer (if available: distortion-free pause/resume and instant seeking)
     - Windows: Windows Media Control Interface (winmm.dll / MCI)
     - macOS: native afplay command
     - Linux: ffplay, mpv, or aplay/paplay
-    Provides zero-dependency audio playback with hardware acceleration.
+    Provides zero-dependency fallback playback with optional hardware acceleration.
     """
 
     def __init__(self, media_path: str = "bad_apple.mp3"):
@@ -21,16 +29,26 @@ class AudioPlayer:
         self._is_open = False
         self._is_paused = False
         self._proc = None
+        self.backend = None
 
-        # Windows MCI configuration
+        # Check for pygame mixer first (universal cross-platform support with zero crackle & seeking)
+        if _HAS_PYGAME:
+            try:
+                if not pygame.mixer.get_init():
+                    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+                self.backend = "pygame"
+            except Exception:
+                self.backend = None
+
+        # Windows MCI configuration fallback
         self.alias = "bad_apple_audio"
         self._winmm = None
-        if self.platform == "win32" and hasattr(ctypes, "windll"):
+        if not self.backend and self.platform == "win32" and hasattr(ctypes, "windll"):
             self._winmm = getattr(ctypes.windll, "winmm", None)
 
-        # POSIX (macOS & Linux) player discovery
+        # POSIX (macOS & Linux) player discovery fallback
         self._posix_cmd = None
-        if self.platform != "win32":
+        if not self.backend and self.platform != "win32":
             # Priority: ffplay, mpv (offer seeking, seamless pause, and zero audio crackle)
             for cmd in ["ffplay", "mpv"]:
                 if shutil.which(cmd):
@@ -57,6 +75,16 @@ class AudioPlayer:
             return
 
         self.stop()
+
+        if self.backend == "pygame":
+            try:
+                pygame.mixer.music.load(self.media_path)
+                pygame.mixer.music.play()
+                self._is_open = True
+                self._is_paused = False
+                return
+            except Exception:
+                self.backend = None
 
         if self.platform == "win32" and self._winmm:
             open_cmd = f'open "{self.media_path}" type mpegvideo alias {self.alias}'
@@ -88,6 +116,14 @@ class AudioPlayer:
 
     def pause(self):
         """Pauses the audio."""
+        if self.backend == "pygame":
+            try:
+                pygame.mixer.music.pause()
+                self._is_paused = True
+                return
+            except Exception:
+                pass
+
         if self.platform == "win32" and self._is_open:
             self._send_mci(f"pause {self.alias}")
             self._is_paused = True
@@ -102,6 +138,14 @@ class AudioPlayer:
 
     def resume(self):
         """Resumes audio playback."""
+        if self.backend == "pygame":
+            try:
+                pygame.mixer.music.unpause()
+                self._is_paused = False
+                return
+            except Exception:
+                pass
+
         if self.platform == "win32" and self._is_open:
             self._send_mci(f"resume {self.alias}")
             self._is_paused = False
@@ -116,6 +160,15 @@ class AudioPlayer:
 
     def seek(self, seconds: float):
         """Seeks to the specified position in seconds."""
+        if self.backend == "pygame":
+            try:
+                pygame.mixer.music.play(start=max(0.0, seconds))
+                if self._is_paused:
+                    pygame.mixer.music.pause()
+                return
+            except Exception:
+                pass
+
         if self.platform == "win32" and self._is_open:
             ms = int(max(0.0, seconds) * 1000)
             self._send_mci(f"seek {self.alias} to {ms}")
@@ -143,6 +196,15 @@ class AudioPlayer:
 
     def stop(self):
         """Stops audio and releases resources."""
+        if self.backend == "pygame":
+            try:
+                pygame.mixer.music.stop()
+            except Exception:
+                pass
+            self._is_open = False
+            self._is_paused = False
+            return
+
         if self.platform == "win32" and self._is_open:
             self._send_mci(f"stop {self.alias}")
             self._send_mci(f"close {self.alias}")
@@ -182,3 +244,8 @@ class AudioPlayer:
 
     def __del__(self):
         self.stop()
+        if self.backend == "pygame":
+            try:
+                pygame.mixer.quit()
+            except Exception:
+                pass
