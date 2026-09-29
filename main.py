@@ -1,6 +1,7 @@
 import argparse
 import atexit
 import os
+import re
 import shutil
 import sys
 import time
@@ -19,8 +20,8 @@ from renderer import TerminalRenderer
 
 
 def restore_terminal():
-    """Restores terminal settings and cursor visibility to normal."""
-    sys.stdout.write("\033[?25h\033[0m\n")
+    """Restores terminal settings, cursor visibility, and main screen buffer."""
+    sys.stdout.write("\033[?25h\033[0m\033[?1049l\n")
     sys.stdout.flush()
 
 
@@ -82,8 +83,8 @@ def play_bad_apple(
 
     atexit.register(restore_terminal)
 
-    # Hide cursor and clear screen
-    sys.stdout.write("\033[?25l\033[2J")
+    # Switch to Alternate Screen Buffer, hide cursor, and clear screen & scrollback
+    sys.stdout.write("\033[?1049h\033[?25l\033[H\033[2J\033[3J")
     sys.stdout.flush()
 
     # Prepare audio player
@@ -181,8 +182,8 @@ def play_bad_apple(
             current_terminal_size = shutil.get_terminal_size()
             if current_terminal_size != last_terminal_size:
                 last_terminal_size = current_terminal_size
-                # Clear screen to wipe any ghost artifacts from the previous size
-                sys.stdout.write("\033[2J")
+                # Reset cursor, clear visible viewport and erase scrollback history
+                sys.stdout.write("\033[H\033[2J\033[3J")
                 sys.stdout.flush()
 
             # 4. Render Frame
@@ -193,9 +194,9 @@ def play_bad_apple(
             tot_time_str = format_time(duration)
             mode_display = {
                 "halfblock": "Half Block",
-                "ascii": "ASCII",
-                "braille": "Braille",
-            }.get(renderer.mode, renderer.mode)
+                "ascii": "ASCII     ",
+                "braille": "Braille   ",
+            }.get(renderer.mode, f"{renderer.mode:<10}")
 
             cols = current_terminal_size.columns
             if cols < 85:
@@ -210,13 +211,18 @@ def play_bad_apple(
 
             bar_widget = create_progress_bar(current_frame_idx, total_frames, bar_length=bar_len)
 
-            status_bar = (
+            status_content = (
                 f"\033[90m[{cur_time_str}/{tot_time_str}] "
                 f"{bar_widget} "
                 f"\033[90m[Frame: {current_frame_idx}/{total_frames} | "
                 f"Mode: \033[97m{mode_display}\033[90m] "
                 f"{controls_str}\033[0m"
             )
+
+            # Center status bar and clear to end of line to prevent leftover characters
+            visible_len = len(re.sub(r"\033\[[0-9;]*[a-zA-Z]", "", status_content))
+            bar_pad = " " * max(0, (cols - visible_len) // 2)
+            status_bar = f"{bar_pad}{status_content}\033[K"
 
             # 6. Write buffer to terminal in one write (Flicker-Free)
             sys.stdout.write(f"\033[H{rendered_str}\n{status_bar}")
