@@ -28,13 +28,23 @@ class AudioPlayer:
         if self.platform == "win32" and hasattr(ctypes, "windll"):
             self._winmm = getattr(ctypes.windll, "winmm", None)
 
-        # Linux player discovery
-        self._linux_cmd = None
-        if self.platform.startswith("linux"):
-            for cmd in ["ffplay", "mpv", "paplay", "aplay"]:
+        # POSIX (macOS & Linux) player discovery
+        self._posix_cmd = None
+        if self.platform != "win32":
+            # Priority: ffplay, mpv (offer seeking, seamless pause, and zero audio crackle)
+            for cmd in ["ffplay", "mpv"]:
                 if shutil.which(cmd):
-                    self._linux_cmd = cmd
+                    self._posix_cmd = cmd
                     break
+
+            if not self._posix_cmd:
+                if self.platform == "darwin" and shutil.which("afplay"):
+                    self._posix_cmd = "afplay"
+                elif self.platform.startswith("linux"):
+                    for cmd in ["paplay", "aplay"]:
+                        if shutil.which(cmd):
+                            self._posix_cmd = cmd
+                            break
 
     def _send_mci(self, command: str) -> int:
         if not self._winmm:
@@ -57,26 +67,14 @@ class AudioPlayer:
                 self._send_mci(f"play {self.alias}")
                 self._is_paused = False
 
-        elif self.platform == "darwin":  # macOS
+        elif self.platform != "win32" and self._posix_cmd:
             try:
-                self._proc = subprocess.Popen(
-                    ["afplay", self.media_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                self._is_open = True
-                self._is_paused = False
-            except Exception:
-                self._proc = None
-
-        elif self.platform.startswith("linux") and self._linux_cmd:  # Linux
-            try:
-                cmd = [self._linux_cmd]
-                if self._linux_cmd == "ffplay":
+                cmd = [self._posix_cmd]
+                if self._posix_cmd == "ffplay":
                     cmd += ["-nodisp", "-autoexit", self.media_path]
-                elif self._linux_cmd == "mpv":
+                elif self._posix_cmd == "mpv":
                     cmd += ["--no-video", self.media_path]
-                else:
+                else:  # afplay, paplay, aplay
                     cmd += [self.media_path]
                 self._proc = subprocess.Popen(
                     cmd,
@@ -125,13 +123,13 @@ class AudioPlayer:
                 self._send_mci(f"play {self.alias}")
         elif self.platform != "win32":
             # For POSIX backends with seeking support (ffplay, mpv)
-            if self.platform.startswith("linux") and self._linux_cmd in ("ffplay", "mpv"):
+            if self._posix_cmd in ("ffplay", "mpv"):
                 self.stop()
                 try:
-                    cmd = [self._linux_cmd]
-                    if self._linux_cmd == "ffplay":
+                    cmd = [self._posix_cmd]
+                    if self._posix_cmd == "ffplay":
                         cmd += ["-nodisp", "-autoexit", "-ss", str(seconds), self.media_path]
-                    elif self._linux_cmd == "mpv":
+                    elif self._posix_cmd == "mpv":
                         cmd += ["--no-video", f"--start={seconds}", self.media_path]
                     self._proc = subprocess.Popen(
                         cmd,
@@ -155,9 +153,24 @@ class AudioPlayer:
                 if self._is_paused:
                     sig_cont = getattr(signal, "SIGCONT", None)
                     if sig_cont:
-                        os.kill(self._proc.pid, sig_cont)
-                self._proc.terminate()
-                self._proc.wait(timeout=0.2)
+                        try:
+                            os.kill(self._proc.pid, sig_cont)
+                        except Exception:
+                            pass
+
+                # If backend is afplay, send SIGINT first for graceful CoreAudio teardown
+                if self._posix_cmd == "afplay":
+                    try:
+                        sig_int = getattr(signal, "SIGINT", None)
+                        if sig_int:
+                            os.kill(self._proc.pid, sig_int)
+                            self._proc.wait(timeout=0.15)
+                    except Exception:
+                        pass
+
+                if self._proc.poll() is None:
+                    self._proc.terminate()
+                    self._proc.wait(timeout=0.2)
             except Exception:
                 try:
                     self._proc.kill()
