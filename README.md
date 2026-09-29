@@ -31,6 +31,11 @@ Required dependencies:
 pip install opencv-python-headless colorama
 ```
 
+Optional (recommended for high-fidelity audio seeking & pause on macOS/Linux):
+```bash
+pip install pygame
+```
+
 To run the player:
 ```bash
 python main.py
@@ -56,6 +61,7 @@ python main.py --width 100 --height 35
   1. Open **Terminal** → **Settings** (`Cmd + ,`) → **Profiles** → **Text**.
   2. Click **Change...** under Font.
   3. Set the **Line Spacing** slider to **`0.85`** (or use modern terminals like [iTerm2](https://iterm2.com/), [Ghostty](https://ghostty.org/), or [Kitty](https://sw.kovidgoyal.net/kitty/) which render box-drawing characters gaplessly by default).
-- **Fast Audio Seeking:**  
-  While macOS includes native `afplay` out of the box, installing `ffmpeg` (`brew install ffmpeg`) automatically enables instant zero-latency audio seeking with `←` / `→` arrow keys.
+- **Fast Audio Seeking & Seamless Pause:**  
+  While macOS includes native `afplay` out of the box, installing `pygame` (`pip install pygame`) or `ffmpeg` (`brew install ffmpeg`) automatically enables instant zero-latency audio seeking with `←` / `→` arrow keys and distortion-free pause/resume.
+
 
