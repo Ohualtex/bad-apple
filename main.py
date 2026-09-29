@@ -1,10 +1,51 @@
 import argparse
 import atexit
+import importlib
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
+
+# Suppress pygame welcome banner on CLI
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+
+# Auto-install missing dependencies for a seamless zero-setup experience
+REQUIRED_PACKAGES = {
+    "cv2": "opencv-python-headless",
+    "colorama": "colorama",
+    "pygame": "pygame",
+}
+
+
+def ensure_dependencies():
+    """Checks for required third-party packages and auto-installs them via pip if missing."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    missing = []
+    for module_name, package_name in REQUIRED_PACKAGES.items():
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            missing.append(package_name)
+
+    if missing:
+        print(f"[*] Missing dependencies detected: {', '.join(missing)}")
+        print("[*] Automatically installing required packages via pip...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+            print("[+] All dependencies installed successfully!\n")
+        except Exception as exc:
+            print(f"[!] Warning: Automatic dependency installation failed: {exc}", file=sys.stderr)
+            print(f"[!] Please manually install them using: pip install {' '.join(missing)}", file=sys.stderr)
+
+
+ensure_dependencies()
 
 try:
     import msvcrt

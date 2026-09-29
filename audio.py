@@ -5,6 +5,8 @@ import signal
 import subprocess
 import sys
 
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+
 try:
     import pygame.mixer
 
