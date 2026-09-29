@@ -8,10 +8,10 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
   - `halfblock` (Default): 2x vertical resolution using half-block characters (`▀`, `▄`) for crystal-clear silhouettes.
   - `braille`: Ultra high-resolution rendering using Unicode Braille (2x4 matrix) characters.
   - `ascii`: Classic nostalgic ASCII shading (` .:-=+*#%@`).
-- **Zero Extra Audio Dependencies:** Uses Windows built-in Media Control Interface (`winmm.dll` / MCI) for hardware-accelerated, lag-free, fully synchronized MP3 playback.
-- **Flicker-Free Rendering:** Employs single-buffer rendering and ANSI cursor positioning (`\033[H`) instead of `cls` for smooth 30 FPS playback.
+- **Cross-Platform & Zero Extra Audio Dependencies:** Runs natively on Windows (`winmm.dll` MCI), macOS (`afplay`), and Linux (`ffplay`/`mpv`/`aplay`) with zero additional Python audio packages.
+- **Flicker-Free & Ghost-Free Rendering:** Employs Alternate Screen Buffer (`\033[?1049h`), scrollback buffer purging, and dynamic resizing for a pristine, clean display at 30 FPS.
 - **Automatic & Verified Download:** Automatically fetches the original Nico Nico Douga Bad Apple video over HTTPS from Archive.org with MD5 checksum verification.
-- **Dynamic Sizing:** Automatically senses terminal dimensions, preserves the 4:3 aspect ratio, and centers the output.
+- **Dynamic Sizing & Visual Scrubber:** Automatically senses terminal dimensions, preserves the 4:3 aspect ratio, centers output, and displays an interactive progress bar.
 
 ## Controls
 
