@@ -58,7 +58,7 @@ python main.py --width 100 --height 35
   The default macOS Terminal.app adds vertical font leading (line spacing) between lines. To achieve a seamless, OLED-smooth display:
   1. Open **Terminal** → **Settings** (`Cmd + ,`) → **Profiles** → **Text**.
   2. Click **Change...** under Font.
-  3. Expand the font window downward if needed, and set the **Line Spacing** slider to **`0.85`**.
+  3. Expand the font window downward if needed, and set the **Line Spacing** slider to **`0.80`**.
   4. Alternatively, press **`M`** to switch to **Braille mode** (which is naturally immune to line spacing), or use modern terminals like [iTerm2](https://iterm2.com/), [Ghostty](https://ghostty.org/), or [Kitty](https://sw.kovidgoyal.net/kitty/).
 
 
