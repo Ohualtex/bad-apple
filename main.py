@@ -2,7 +2,6 @@ import argparse
 import atexit
 import importlib
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -54,26 +53,7 @@ from audio import create_audio_player
 from download import download_audio, download_video
 from input import create_input_handler, restore_terminal
 from renderer import TerminalRenderer
-
-
-def format_time(seconds: float) -> str:
-    """Formats seconds into MM:SS display."""
-    mins = int(seconds) // 60
-    secs = int(seconds) % 60
-    return f"{mins:02d}:{secs:02d}"
-
-
-def create_progress_bar(current: int, total: int, bar_length: int = 14) -> str:
-    """Creates a sleek visual progress scrubber bar with seamless box-drawing alignment."""
-    if total <= 0:
-        return f"\033[90m{'─' * bar_length}\033[0m"
-    ratio = min(1.0, max(0.0, current / total))
-    filled_len = int(round(ratio * bar_length))
-    filled_len = min(bar_length, max(0, filled_len))
-    unfilled_len = bar_length - filled_len
-    left = "━" * filled_len
-    right = "─" * unfilled_len
-    return f"\033[97m{left}\033[90m{right}\033[0m"
+from ui import render_status_bar
 
 
 def play_bad_apple(
@@ -221,45 +201,14 @@ def play_bad_apple(
             rendered_str = renderer.render_frame(frame)
 
             # 5. Status Bar with Visual Scrubber
-            cur_time_str = format_time(current_frame_idx / fps)
-            tot_time_str = format_time(duration)
-            mode_name = {
-                "halfblock": "HalfBlock",
-                "ascii": "ASCII",
-                "braille": "Braille",
-            }.get(renderer.mode, renderer.mode)
-
-            cols = current_terminal_size.columns
-            if cols < 75:
-                bar_len = 6
-                controls_str = "[Space:|| Q:Quit]"
-                info_str = f"[{mode_name}]"
-            elif cols < 95:
-                bar_len = 8
-                controls_str = "[Space:|| Q:Quit]"
-                info_str = f"[Frame: {current_frame_idx}/{total_frames} | {mode_name}]"
-            elif cols < 115:
-                bar_len = 12
-                controls_str = "[Space: Pause | Q: Quit]"
-                info_str = f"[Frame: {current_frame_idx}/{total_frames} | Mode: {mode_name}]"
-            else:
-                bar_len = 16
-                controls_str = "[Space: Pause | M: Mode | ←/→: Seek | Q: Quit]"
-                info_str = f"[Frame: {current_frame_idx}/{total_frames} | Mode: {mode_name}]"
-
-            bar_widget = create_progress_bar(current_frame_idx, total_frames, bar_length=bar_len)
-
-            status_content = (
-                f"\033[90m[{cur_time_str}/{tot_time_str}] "
-                f"{bar_widget} "
-                f"\033[90m{info_str} "
-                f"{controls_str}\033[0m"
+            status_bar = render_status_bar(
+                current_frame=current_frame_idx,
+                total_frames=total_frames,
+                fps=fps,
+                duration=duration,
+                mode=renderer.mode,
+                terminal_columns=current_terminal_size.columns,
             )
-
-            # Center status bar and clear to end of line to prevent leftover characters
-            visible_len = len(re.sub(r"\033\[[0-9;]*[a-zA-Z]", "", status_content))
-            bar_pad = " " * max(0, (cols - visible_len) // 2)
-            status_bar = f"{bar_pad}{status_content}\033[K"
 
             # 6. Write buffer to terminal with clean blank separator line (Flicker-Free)
             sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
