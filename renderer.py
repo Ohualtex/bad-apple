@@ -25,7 +25,7 @@ class TerminalRenderer:
         self.target_width = target_width
         self.target_height = target_height
 
-    def get_dimensions(self) -> tuple[int, int, int, int]:
+    def get_dimensions(self) -> tuple[int, int, int, int, int]:
         """
         Calculates character width, height, and margins (padding) to render,
         preserving the 4:3 aspect ratio based on terminal dimensions.
@@ -77,15 +77,16 @@ class TerminalRenderer:
         char_h = max(2, char_h)
 
         pad_x = max(0, (cols - char_w) // 2)
-        pad_y = max(0, (avail_h - char_h) // 2)
-        return char_w, char_h, pad_x, pad_y
+        pad_top = max(0, (avail_h - char_h) // 2)
+        pad_bottom = max(0, avail_h - char_h - pad_top)
+        return char_w, char_h, pad_x, pad_top, pad_bottom
 
     def render_frame(self, frame_bgr: np.ndarray) -> str:
         """
         Converts an OpenCV BGR frame into a terminal string according to the selected mode.
         """
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-        char_w, char_h, pad_x, pad_y = self.get_dimensions()
+        char_w, char_h, pad_x, pad_top, pad_bottom = self.get_dimensions()
         indent = " " * pad_x
 
         if self.mode == "halfblock":
@@ -123,6 +124,7 @@ class TerminalRenderer:
             idx = np.clip(idx, 0, len(ASCII_CHARS) - 1)
             char_matrix = ASCII_CHARS[idx]
 
-        rendered_lines = [indent + "".join(row) for row in char_matrix]
-        vertical_pad = [""] * pad_y
-        return "\n".join(vertical_pad + rendered_lines)
+        rendered_lines = [indent + "".join(row) + "\033[K" for row in char_matrix]
+        top_pad = ["\033[K"] * pad_top
+        bottom_pad = ["\033[K"] * pad_bottom
+        return "\n".join(top_pad + rendered_lines + bottom_pad)

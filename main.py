@@ -185,15 +185,16 @@ def format_time(seconds: float) -> str:
 
 
 def create_progress_bar(current: int, total: int, bar_length: int = 14) -> str:
-    """Creates a sleek visual progress scrubber bar: ━━━━●──────────"""
+    """Creates a sleek visual progress scrubber bar with seamless box-drawing alignment."""
     if total <= 0:
         return f"\033[90m{'─' * bar_length}\033[0m"
     ratio = min(1.0, max(0.0, current / total))
-    pos = int(ratio * (bar_length - 1))
-    left = "━" * pos
-    head = "●"
-    right = "─" * (bar_length - 1 - pos)
-    return f"\033[97m{left}{head}\033[90m{right}\033[0m"
+    filled_len = int(round(ratio * bar_length))
+    filled_len = min(bar_length, max(0, filled_len))
+    unfilled_len = bar_length - filled_len
+    left = "━" * filled_len
+    right = "─" * unfilled_len
+    return f"\033[97m{left}\033[90m{right}\033[0m"
 
 
 def play_bad_apple(
@@ -361,11 +362,11 @@ def play_bad_apple(
                 controls_str = "[Space:|| Q:Quit]"
                 info_str = f"[Frame: {current_frame_idx}/{total_frames} | {mode_name}]"
             elif cols < 115:
-                bar_len = 10
+                bar_len = 12
                 controls_str = "[Space: Pause | Q: Quit]"
                 info_str = f"[Frame: {current_frame_idx}/{total_frames} | Mode: {mode_name}]"
             else:
-                bar_len = 14
+                bar_len = 16
                 controls_str = "[Space: Pause | M: Mode | ←/→: Seek | Q: Quit]"
                 info_str = f"[Frame: {current_frame_idx}/{total_frames} | Mode: {mode_name}]"
 
@@ -384,7 +385,7 @@ def play_bad_apple(
             status_bar = f"{bar_pad}{status_content}\033[K"
 
             # 6. Write buffer to terminal with clean blank separator line (Flicker-Free)
-            sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}")
+            sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
             sys.stdout.flush()
 
             # 6. Precision Framerate Timing
