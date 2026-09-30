@@ -24,7 +24,22 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
 | **R** | Restart playback |
 | **Q / Esc** | Quit |
 
-## Quick Start (Zero-Setup)
+## Installation & Quick Start
+
+### Option 1: Install via pip (Recommended)
+
+```bash
+pip install bad-apple-in-terminal
+```
+
+Run it directly from anywhere in your terminal:
+```bash
+bad-apple
+# or
+badapple
+```
+
+### Option 2: Run from Source (Zero-Setup)
 
 Just clone and run! Required dependencies and media files are automatically prepared on first launch:
 
@@ -34,22 +49,17 @@ cd bad-apple
 python main.py
 ```
 
-*(Optional) If you prefer installing dependencies manually:*
-```bash
-pip install opencv-python-headless colorama pygame
-```
-
 ### Options & Flags
 
 ```bash
-# Start with a specific mode (halfblock, ascii, braille)
-python main.py --mode braille
+# Start with a specific render mode (halfblock, ascii, braille)
+bad-apple --mode braille
 
 # Disable audio
-python main.py --no-audio
+bad-apple --no-audio
 
 # Set specific terminal width/height
-python main.py --width 100 --height 35
+bad-apple --width 100 --height 35
 ```
 
 ### macOS Tips
