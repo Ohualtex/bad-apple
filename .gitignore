@@ -6,3 +6,4 @@ __pycache__/
 .venv/
 shelf/
 *.png
+.ruff_cache/
