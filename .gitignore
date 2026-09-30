@@ -7,3 +7,6 @@ __pycache__/
 shelf/
 *.png
 .ruff_cache/
+dist/
+build/
+*.egg-info/

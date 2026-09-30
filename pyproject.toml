@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bad-apple-in-terminal"
+version = "1.0.0"
+authors = [
+    { name = "Ohualtex" }
+]
+description = "Bad Apple!! Terminal ASCII & Unicode Player with hardware-accelerated audio and responsive resizing."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["bad-apple", "terminal", "ascii-art", "braille", "cli", "pygame", "opencv"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video :: Display",
+    "Topic :: Terminals",
+]
+dependencies = [
+    "opencv-python-headless>=4.8.0",
+    "pygame>=2.5.0",
+    "colorama>=0.4.6",
+    "numpy>=1.24.0",
+]
+
+[project.scripts]
+bad-apple = "main:main"
+badapple = "main:main"
+
+[project.urls]
+Homepage = "https://github.com/Ohualtex/bad-apple"
+Repository = "https://github.com/Ohualtex/bad-apple.git"
+Issues = "https://github.com/Ohualtex/bad-apple/issues"
+
+[tool.setuptools]
+py-modules = ["main", "download", "renderer", "ui"]
+packages = ["audio", "input"]

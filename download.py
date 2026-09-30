@@ -18,6 +18,31 @@ AUDIO_MD5 = "fd4c1a0b0ead09b5c0ab58e4b1016317"
 DEFAULT_AUDIO_NAME = "bad_apple.mp3"
 
 
+def get_media_cache_dir() -> str:
+    """Returns the platform-standard persistent cache directory for Bad Apple media assets."""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
+        cache_dir = os.path.join(base, "bad-apple")
+    elif sys.platform == "darwin":
+        cache_dir = os.path.expanduser("~/Library/Caches/bad-apple")
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+        cache_dir = os.path.join(base, "bad-apple")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def get_asset_path(filename: str) -> str:
+    """
+    Finds the asset path:
+    1. If exists in current working directory, use local file.
+    2. Otherwise, returns the path inside the platform cache directory.
+    """
+    if os.path.exists(filename):
+        return filename
+    return os.path.join(get_media_cache_dir(), filename)
+
+
 def verify_md5(file_path: str, expected_md5: str) -> bool:
     """Verifies the MD5 digest of a file to check integrity and authenticity."""
     hasher = hashlib.md5()
@@ -73,14 +98,16 @@ def _download_file(url: str, destination: str, expected_md5: str, label: str) ->
         raise RuntimeError(f"Error while downloading {label}: {e}")
 
 
-def download_video(destination: str = DEFAULT_VIDEO_NAME) -> str:
+def download_video(destination: str | None = None) -> str:
     """Downloads the original Bad Apple video file."""
-    return _download_file(VIDEO_URL, destination, VIDEO_MD5, "Bad Apple Video")
+    dest = destination or get_asset_path(DEFAULT_VIDEO_NAME)
+    return _download_file(VIDEO_URL, dest, VIDEO_MD5, "Bad Apple Video")
 
 
-def download_audio(destination: str = DEFAULT_AUDIO_NAME) -> str:
+def download_audio(destination: str | None = None) -> str:
     """Downloads the original Bad Apple MP3 audio file."""
-    return _download_file(AUDIO_URL, destination, AUDIO_MD5, "Bad Apple Audio")
+    dest = destination or get_asset_path(DEFAULT_AUDIO_NAME)
+    return _download_file(AUDIO_URL, dest, AUDIO_MD5, "Bad Apple Audio")
 
 
 def download_all():

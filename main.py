@@ -50,7 +50,7 @@ import colorama
 import cv2
 
 from audio import create_audio_player
-from download import download_audio, download_video
+from download import download_audio, download_video, get_asset_path
 from input import (
     create_input_handler,
     enter_alternate_screen,
@@ -62,22 +62,23 @@ from ui import render_status_bar
 
 
 def play_bad_apple(
-    video_path: str = "bad_apple.mp4",
-    audio_path: str = "bad_apple.mp3",
     mode: str = "halfblock",
     enable_audio: bool = True,
     target_width: int = None,
     target_height: int = None,
 ):
     """Main playback loop for the Bad Apple terminal player."""
+    video_path = get_asset_path("bad_apple.mp4")
+    audio_path = get_asset_path("bad_apple.mp3")
+
     # Verify / download video file
     if not os.path.exists(video_path):
-        print(f"[*] '{video_path}' not found, starting automatic download...")
+        print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
         download_video(video_path)
 
     # Verify / download audio file
     if enable_audio and not os.path.exists(audio_path):
-        print(f"[*] '{audio_path}' not found, starting automatic download...")
+        print(f"[*] Bad Apple audio not found, downloading to '{audio_path}'...")
         download_audio(audio_path)
 
     # Probe video metadata
@@ -290,21 +291,8 @@ def main():
         default=None,
         help="Target display height (default: automatic terminal height)",
     )
-    parser.add_argument(
-        "--file",
-        default="bad_apple.mp4",
-        help="Path to the video file",
-    )
-    parser.add_argument(
-        "--audio",
-        default="bad_apple.mp3",
-        help="Path to the audio file",
-    )
-
     args = parser.parse_args()
     play_bad_apple(
-        video_path=args.file,
-        audio_path=args.audio,
         mode=args.mode,
         enable_audio=not args.no_audio,
         target_width=args.width,
