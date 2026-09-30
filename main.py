@@ -51,7 +51,12 @@ import cv2
 
 from audio import create_audio_player
 from download import download_audio, download_video
-from input import create_input_handler, enter_alternate_screen, restore_terminal
+from input import (
+    create_input_handler,
+    enter_alternate_screen,
+    flush_input_buffer,
+    restore_terminal,
+)
 from renderer import TerminalRenderer
 from ui import render_status_bar
 
@@ -75,15 +80,16 @@ def play_bad_apple(
         print(f"[*] '{audio_path}' not found, starting automatic download...")
         download_audio(audio_path)
 
-    # Initialize video capture
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
+    # Probe video metadata
+    probe_cap = cv2.VideoCapture(video_path)
+    if not probe_cap.isOpened():
         print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
         return
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 6573
+    fps = probe_cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(probe_cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 6573
     duration = total_frames / fps
+    probe_cap.release()
 
     # Initialize terminal
     colorama.init()
@@ -101,155 +107,159 @@ def play_bad_apple(
     mode_list = TerminalRenderer.MODES
     mode_idx = mode_list.index(mode) if mode in mode_list else 0
 
-    try:
-        while True:
-            # Switch to Alternate Screen Buffer, hide cursor, and clear screen & scrollback
-            enter_alternate_screen()
+    while True:
+        # Switch to Alternate Screen Buffer, hide cursor, and clear screen & scrollback
+        enter_alternate_screen()
 
-            # Start / restart audio player
-            if audio_player:
-                audio_player.start()
+        # Start / restart audio player
+        if audio_player:
+            audio_player.start()
 
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            last_terminal_size = shutil.get_terminal_size()
-            input_handler = create_input_handler()
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
+            break
 
-            current_frame_idx = 0
-            playback_start_time = time.perf_counter()
-            is_paused = False
-            pause_start_time = 0.0
-            finished_naturally = False
+        flush_input_buffer()
+        last_terminal_size = shutil.get_terminal_size()
+        input_handler = create_input_handler()
 
-            try:
-                while True:
-                    # 1. Process keyboard inputs (Cross-platform)
-                    key = input_handler.get_key()
-                    if key == "RIGHT":  # Seek +5s
-                        new_frame = min(total_frames - 1, current_frame_idx + int(5 * fps))
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
-                        current_frame_idx = new_frame
-                        now = time.perf_counter()
-                        playback_start_time = now - (current_frame_idx / fps)
-                        if audio_player:
-                            audio_player.seek(current_frame_idx / fps)
-                    elif key == "LEFT":  # Seek -5s
-                        new_frame = max(0, current_frame_idx - int(5 * fps))
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
-                        current_frame_idx = new_frame
-                        now = time.perf_counter()
-                        playback_start_time = now - (current_frame_idx / fps)
-                        if audio_player:
-                            audio_player.seek(current_frame_idx / fps)
-                    elif key == "QUIT":  # Exit (Q or ESC)
-                        break
-                    elif key == "SPACE":  # Pause / Resume
-                        is_paused = not is_paused
-                        if is_paused:
-                            pause_start_time = time.perf_counter()
-                            if audio_player:
-                                audio_player.pause()
-                        else:
-                            pause_duration = time.perf_counter() - pause_start_time
-                            playback_start_time += pause_duration
-                            if audio_player:
-                                audio_player.resume()
-                    elif key == "MODE":  # Switch mode
-                        mode_idx = (mode_idx + 1) % len(mode_list)
-                        renderer.mode = mode_list[mode_idx]
-                    elif key == "RESTART":  # Restart from beginning
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        current_frame_idx = 0
-                        playback_start_time = time.perf_counter()
-                        if audio_player:
-                            audio_player.seek(0)
-                            audio_player.resume()
-                        is_paused = False
+        current_frame_idx = 0
+        playback_start_time = time.perf_counter()
+        is_paused = False
+        pause_start_time = 0.0
+        finished_naturally = False
 
-                    # If paused, sleep briefly
-                    if is_paused:
-                        time.sleep(0.05)
-                        continue
-
-                    # 2. Audio-Video Synchronization
+        try:
+            while True:
+                # 1. Process keyboard inputs (Cross-platform)
+                key = input_handler.get_key()
+                if key == "RIGHT":  # Seek +5s
+                    new_frame = min(total_frames - 1, current_frame_idx + int(5 * fps))
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+                    current_frame_idx = new_frame
                     now = time.perf_counter()
-                    elapsed = now - playback_start_time
-                    target_frame_idx = int(elapsed * fps)
+                    playback_start_time = now - (current_frame_idx / fps)
+                    if audio_player:
+                        audio_player.seek(current_frame_idx / fps)
+                elif key == "LEFT":  # Seek -5s
+                    new_frame = max(0, current_frame_idx - int(5 * fps))
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+                    current_frame_idx = new_frame
+                    now = time.perf_counter()
+                    playback_start_time = now - (current_frame_idx / fps)
+                    if audio_player:
+                        audio_player.seek(current_frame_idx / fps)
+                elif key == "QUIT":  # Exit (Q or ESC)
+                    break
+                elif key == "SPACE":  # Pause / Resume
+                    is_paused = not is_paused
+                    if is_paused:
+                        pause_start_time = time.perf_counter()
+                        if audio_player:
+                            audio_player.pause()
+                    else:
+                        pause_duration = time.perf_counter() - pause_start_time
+                        playback_start_time += pause_duration
+                        if audio_player:
+                            audio_player.resume()
+                elif key == "MODE":  # Switch mode
+                    mode_idx = (mode_idx + 1) % len(mode_list)
+                    renderer.mode = mode_list[mode_idx]
+                elif key == "RESTART":  # Restart from beginning
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    current_frame_idx = 0
+                    playback_start_time = time.perf_counter()
+                    if audio_player:
+                        audio_player.seek(0)
+                        audio_player.resume()
+                    is_paused = False
 
-                    if target_frame_idx >= total_frames:
-                        finished_naturally = True
-                        break
+                # If paused, sleep briefly
+                if is_paused:
+                    time.sleep(0.05)
+                    continue
 
-                    # If lagging behind the target frame, skip frames
-                    if target_frame_idx > current_frame_idx + 1:
-                        if target_frame_idx - current_frame_idx > 5:
-                            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
-                            current_frame_idx = target_frame_idx
-                        else:
-                            while current_frame_idx < target_frame_idx:
-                                cap.grab()
-                                current_frame_idx += 1
+                # 2. Audio-Video Synchronization
+                now = time.perf_counter()
+                elapsed = now - playback_start_time
+                target_frame_idx = int(elapsed * fps)
 
-                    ret, frame = cap.read()
-                    if not ret:
-                        finished_naturally = True
-                        break
-                    current_frame_idx += 1
+                if target_frame_idx >= total_frames:
+                    finished_naturally = True
+                    break
 
-                    # 3. Check for terminal resize (Responsive Resizing)
-                    current_terminal_size = shutil.get_terminal_size()
-                    if current_terminal_size != last_terminal_size:
-                        last_terminal_size = current_terminal_size
-                        # Reset cursor, clear visible viewport and erase scrollback history
-                        sys.stdout.write("\033[H\033[2J\033[3J")
-                        sys.stdout.flush()
+                # If lagging behind the target frame, skip frames
+                if target_frame_idx > current_frame_idx + 1:
+                    if target_frame_idx - current_frame_idx > 5:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
+                        current_frame_idx = target_frame_idx
+                    else:
+                        while current_frame_idx < target_frame_idx:
+                            cap.grab()
+                            current_frame_idx += 1
 
-                    # 4. Render Frame
-                    rendered_str = renderer.render_frame(frame)
+                ret, frame = cap.read()
+                if not ret:
+                    finished_naturally = True
+                    break
+                current_frame_idx += 1
 
-                    # 5. Status Bar with Visual Scrubber
-                    status_bar = render_status_bar(
-                        current_frame=current_frame_idx,
-                        total_frames=total_frames,
-                        fps=fps,
-                        duration=duration,
-                        mode=renderer.mode,
-                        terminal_columns=current_terminal_size.columns,
-                    )
-
-                    # 6. Write buffer to terminal with clean blank separator line (Flicker-Free)
-                    sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
+                # 3. Check for terminal resize (Responsive Resizing)
+                current_terminal_size = shutil.get_terminal_size()
+                if current_terminal_size != last_terminal_size:
+                    last_terminal_size = current_terminal_size
+                    # Reset cursor, clear visible viewport and erase scrollback history
+                    sys.stdout.write("\033[H\033[2J\033[3J")
                     sys.stdout.flush()
 
-                    # 7. Precision Framerate Timing
-                    next_frame_time = (current_frame_idx + 1) / fps
-                    remaining = next_frame_time - (time.perf_counter() - playback_start_time)
-                    if remaining > 0.002:
-                        time.sleep(remaining)
+                # 4. Render Frame
+                rendered_str = renderer.render_frame(frame)
 
-            except KeyboardInterrupt:
-                finished_naturally = False
-            finally:
-                if audio_player:
-                    audio_player.stop()
-                restore_terminal()
+                # 5. Status Bar with Visual Scrubber
+                status_bar = render_status_bar(
+                    current_frame=current_frame_idx,
+                    total_frames=total_frames,
+                    fps=fps,
+                    duration=duration,
+                    mode=renderer.mode,
+                    terminal_columns=current_terminal_size.columns,
+                )
 
-            if not finished_naturally:
-                print("\n[✓] Playback ended.")
-                break
+                # 6. Write buffer to terminal with clean blank separator line (Flicker-Free)
+                sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
+                sys.stdout.flush()
 
-            print("\n[✓] Playback finished.")
-            try:
-                choice = input("Replay? [y/n]: ").strip().lower()
-                if choice in ("y", "yes"):
-                    continue
-                else:
-                    print()
-                    break
-            except (KeyboardInterrupt, EOFError):
+                # 7. Precision Framerate Timing
+                next_frame_time = (current_frame_idx + 1) / fps
+                remaining = next_frame_time - (time.perf_counter() - playback_start_time)
+                if remaining > 0.002:
+                    time.sleep(remaining)
+
+        except KeyboardInterrupt:
+            finished_naturally = False
+        finally:
+            cap.release()
+            if audio_player:
+                audio_player.stop()
+            restore_terminal()
+
+        if not finished_naturally:
+            print("\n[✓] Playback ended.")
+            break
+
+        print("\n[✓] Playback finished.")
+        flush_input_buffer()
+        try:
+            choice = input("Replay? [y/n]: ").strip().lower()
+            if choice in ("y", "yes"):
+                continue
+            else:
                 print()
                 break
-    finally:
-        cap.release()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            break
 
 
 def main():

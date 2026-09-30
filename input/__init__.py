@@ -65,6 +65,27 @@ def restore_terminal(handler: BaseInputHandler | None = None) -> None:
         sys.stdout.flush()
 
 
+def flush_input_buffer() -> None:
+    """
+    Discards any pending or unread keystrokes in the console input buffer.
+    """
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+
+            while msvcrt.kbhit():
+                msvcrt.getch()
+        except Exception:
+            pass
+    else:
+        try:
+            import termios
+
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+        except Exception:
+            pass
+
+
 # Backward-compatible alias
 InputHandler = create_input_handler
 
@@ -72,6 +93,7 @@ __all__ = [
     "BaseInputHandler",
     "create_input_handler",
     "enter_alternate_screen",
+    "flush_input_buffer",
     "InputHandler",
     "restore_terminal",
 ]
