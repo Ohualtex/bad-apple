@@ -1,12 +1,41 @@
+# Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
+.ruff_cache/
+.pytest_cache/
+
+# Media assets & binary cache
 *.mp4
 *.mp3
-.venv/
+*.bin
 shelf/
+scratch/
 *.png
-.ruff_cache/
+
+# Packaging & Builds
 dist/
 build/
 *.egg-info/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Environment variables & secrets (Leak protection)
+.env
+.env.*
+*.env
+*.pem
+*.key
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS metadata
+.DS_Store
+Thumbs.db

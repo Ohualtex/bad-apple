@@ -1,5 +1,9 @@
 # Bad Apple!! Terminal Player 🍎
 
+[![PyPI version](https://img.shields.io/pypi/v/bad-apple-in-terminal.svg)](https://pypi.org/project/bad-apple-in-terminal/)
+[![Python Version](https://img.shields.io/pypi/pyversions/bad-apple-in-terminal.svg)](https://pypi.org/project/bad-apple-in-terminal/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Flicker-free, audio-synced Bad Apple!! player for your terminal.
 
 ## Features
