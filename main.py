@@ -320,6 +320,7 @@ def play_bad_apple(
             if target_frame_idx > current_frame_idx + 1:
                 if target_frame_idx - current_frame_idx > 5:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
+                    current_frame_idx = target_frame_idx
                 else:
                     while current_frame_idx < target_frame_idx:
                         cap.grab()
@@ -344,30 +345,36 @@ def play_bad_apple(
             # 5. Status Bar with Visual Scrubber
             cur_time_str = format_time(current_frame_idx / fps)
             tot_time_str = format_time(duration)
-            mode_display = {
-                "halfblock": "Half Block",
-                "ascii": "ASCII     ",
-                "braille": "Braille   ",
-            }.get(renderer.mode, f"{renderer.mode:<10}")
+            mode_name = {
+                "halfblock": "HalfBlock",
+                "ascii": "ASCII",
+                "braille": "Braille",
+            }.get(renderer.mode, renderer.mode)
 
             cols = current_terminal_size.columns
-            if cols < 85:
+            if cols < 75:
+                bar_len = 6
+                controls_str = "[Space:|| Q:Quit]"
+                info_str = f"[{mode_name}]"
+            elif cols < 95:
                 bar_len = 8
-                controls_str = "[Space: || | Q: Quit]"
-            elif cols < 110:
-                bar_len = 12
-                controls_str = "[Space: Pause | M: Mode | Q: Quit]"
+                controls_str = "[Space:|| Q:Quit]"
+                info_str = f"[Frame: {current_frame_idx}/{total_frames} | {mode_name}]"
+            elif cols < 115:
+                bar_len = 10
+                controls_str = "[Space: Pause | Q: Quit]"
+                info_str = f"[Frame: {current_frame_idx}/{total_frames} | Mode: {mode_name}]"
             else:
-                bar_len = 16
+                bar_len = 14
                 controls_str = "[Space: Pause | M: Mode | ←/→: Seek | Q: Quit]"
+                info_str = f"[Frame: {current_frame_idx}/{total_frames} | Mode: {mode_name}]"
 
             bar_widget = create_progress_bar(current_frame_idx, total_frames, bar_length=bar_len)
 
             status_content = (
                 f"\033[90m[{cur_time_str}/{tot_time_str}] "
                 f"{bar_widget} "
-                f"\033[90m[Frame: {current_frame_idx}/{total_frames} | "
-                f"Mode: \033[97m{mode_display}\033[90m] "
+                f"\033[90m{info_str} "
                 f"{controls_str}\033[0m"
             )
 
@@ -376,8 +383,8 @@ def play_bad_apple(
             bar_pad = " " * max(0, (cols - visible_len) // 2)
             status_bar = f"{bar_pad}{status_content}\033[K"
 
-            # 6. Write buffer to terminal in one write (Flicker-Free)
-            sys.stdout.write(f"\033[H{rendered_str}\n{status_bar}")
+            # 6. Write buffer to terminal with clean blank separator line (Flicker-Free)
+            sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}")
             sys.stdout.flush()
 
             # 6. Precision Framerate Timing
