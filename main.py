@@ -47,134 +47,13 @@ def ensure_dependencies():
 
 ensure_dependencies()
 
-try:
-    import msvcrt
-except ImportError:
-    msvcrt = None
-
 import colorama
 import cv2
 
-from audio import AudioPlayer
+from audio import create_audio_player
 from download import download_audio, download_video
+from input import create_input_handler, restore_terminal
 from renderer import TerminalRenderer
-
-
-_global_input_handler = None
-
-
-class InputHandler:
-    """
-    Cross-platform non-blocking keyboard input listener supporting
-    Windows (msvcrt) and POSIX systems / Linux / macOS (termios / select).
-    """
-
-    def __init__(self):
-        self.is_windows = os.name == "nt"
-        self._old_settings = None
-        self._fd = None
-        self._termios = None
-
-        if not self.is_windows:
-            try:
-                import termios
-
-                self._termios = termios
-                self._fd = sys.stdin.fileno()
-                self._old_settings = self._termios.tcgetattr(self._fd)
-                # Create raw/non-canonical settings without ECHO to prevent key escape sequences leaking
-                attrs = self._termios.tcgetattr(self._fd)
-                attrs[3] = attrs[3] & ~(self._termios.ICANON | self._termios.ECHO)
-                attrs[6][self._termios.VMIN] = 0
-                attrs[6][self._termios.VTIME] = 0
-                self._termios.tcsetattr(self._fd, self._termios.TCSANOW, attrs)
-            except Exception:
-                self._termios = None
-
-    def get_key(self) -> str | None:
-        """
-        Polls for a key press without blocking.
-        Returns normalized key names: 'SPACE', 'QUIT', 'MODE', 'RESTART', 'LEFT', 'RIGHT' or None.
-        """
-        if self.is_windows:
-            if msvcrt and msvcrt.kbhit():
-                ch = msvcrt.getch()
-                if ch in (b"\x00", b"\xe0"):
-                    sub = msvcrt.getch()
-                    if sub == b"M":
-                        return "RIGHT"
-                    elif sub == b"K":
-                        return "LEFT"
-                    return None
-                elif ch == b" ":
-                    return "SPACE"
-                elif ch in (b"q", b"Q", b"\x1b"):
-                    return "QUIT"
-                elif ch in (b"m", b"M"):
-                    return "MODE"
-                elif ch in (b"r", b"R"):
-                    return "RESTART"
-            return None
-        else:
-            if not self._termios or self._fd is None:
-                return None
-            import select
-
-            rlist, _, _ = select.select([self._fd], [], [], 0)
-            if not rlist:
-                return None
-
-            try:
-                buf = os.read(self._fd, 32)
-            except (OSError, BlockingIOError):
-                return None
-
-            if not buf:
-                return None
-
-            # If an escape sequence starts with \x1b, check for trailing bytes
-            if buf == b"\x1b":
-                r2, _, _ = select.select([self._fd], [], [], 0.02)
-                if r2:
-                    try:
-                        buf += os.read(self._fd, 31)
-                    except (OSError, BlockingIOError):
-                        pass
-
-            if buf == b" ":
-                return "SPACE"
-            elif buf in (b"q", b"Q"):
-                return "QUIT"
-            elif buf in (b"m", b"M"):
-                return "MODE"
-            elif buf in (b"r", b"R"):
-                return "RESTART"
-            elif buf == b"\x1b":
-                return "QUIT"
-            # Support ANSI (\x1b[C), SS3 (\x1bOC), and terminal modifier variants
-            elif buf in (b"\x1b[C", b"\x1bOC") or (buf.startswith(b"\x1b") and buf.endswith(b"C")):
-                return "RIGHT"
-            elif buf in (b"\x1b[D", b"\x1bOD") or (buf.startswith(b"\x1b") and buf.endswith(b"D")):
-                return "LEFT"
-
-            return None
-
-    def restore(self):
-        """Restores original terminal attributes on POSIX systems."""
-        if not self.is_windows and self._termios and self._old_settings and self._fd is not None:
-            try:
-                self._termios.tcsetattr(self._fd, self._termios.TCSADRAIN, self._old_settings)
-            except Exception:
-                pass
-
-
-def restore_terminal():
-    """Restores terminal settings, cursor visibility, and main screen buffer."""
-    global _global_input_handler
-    if _global_input_handler:
-        _global_input_handler.restore()
-    sys.stdout.write("\033[?25h\033[0m\033[?1049l\n")
-    sys.stdout.flush()
 
 
 def format_time(seconds: float) -> str:
@@ -241,15 +120,13 @@ def play_bad_apple(
     sys.stdout.flush()
 
     # Prepare audio player
-    audio_player = AudioPlayer(audio_path) if enable_audio else None
+    audio_player = create_audio_player(audio_path) if enable_audio else None
     if audio_player:
         audio_player.start()
 
     renderer = TerminalRenderer(mode=mode, target_width=target_width, target_height=target_height)
     last_terminal_size = shutil.get_terminal_size()
-    global _global_input_handler
-    input_handler = InputHandler()
-    _global_input_handler = input_handler
+    input_handler = create_input_handler()
 
     current_frame_idx = 0
     playback_start_time = time.perf_counter()
