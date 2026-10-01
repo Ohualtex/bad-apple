@@ -100,29 +100,29 @@ def play_bad_apple(
         if os.path.exists(cache_path):
             use_binary_cache = True
         else:
-            # Neither cache nor video exists, or cache is missing
+            # Cache is missing
             build_cache_choice = True
-            if not os.path.exists(video_path):
-                if sys.stdin.isatty():
-                    try:
-                        ans = input("Build binary cache now? (recommended) [Y/n]: ").strip().lower()
-                        if ans in ("n", "no"):
-                            build_cache_choice = False
-                    except (EOFError, KeyboardInterrupt):
-                        print()
-                        return
+            if sys.stdin.isatty():
+                try:
+                    ans = input("Build binary cache now? (recommended) [Y/n]: ").strip().lower()
+                    if ans in ("n", "no"):
+                        build_cache_choice = False
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    return
 
             if build_cache_choice:
-                # Try downloading pre-built cache from CDN first (fastest, lightweight)
                 cache_downloaded = False
-                try:
-                    download_binary_cache(cache_path)
-                    cache_downloaded = True
-                    use_binary_cache = True
-                except Exception as e:
-                    print(f"[*] Pre-built cache download unavailable ({e}). Falling back to local build...")
+                # If local video does not exist, try downloading pre-built cache from CDN first (fastest, lightweight)
+                if not os.path.exists(video_path):
+                    try:
+                        download_binary_cache(cache_path)
+                        cache_downloaded = True
+                        use_binary_cache = True
+                    except Exception as e:
+                        print(f"[*] Pre-built cache download unavailable ({e}). Falling back to local build...")
 
-                # If CDN download didn't work (e.g. offline or release asset pending), build from video
+                # If CDN download didn't happen/work, build from video locally
                 if not cache_downloaded:
                     ensure_package("cv2", "opencv-python-headless")
                     if not os.path.exists(video_path):
