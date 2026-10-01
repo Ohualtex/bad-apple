@@ -18,7 +18,7 @@ AUDIO_MD5 = "fd4c1a0b0ead09b5c0ab58e4b1016317"
 DEFAULT_AUDIO_NAME = "bad_apple.mp3"
 
 DEFAULT_CACHE_NAME = "bad_apple.bin"
-CACHE_URL = "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.0/bad_apple.bin"
+CACHE_URL = "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.1/bad_apple.bin"
 CACHE_MD5 = "bfb923d8e071539a4b23a9a9fabe6b04"
 
 

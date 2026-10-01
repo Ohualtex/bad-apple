@@ -99,8 +99,9 @@ def play_bad_apple(
     if use_cache:
         if os.path.exists(cache_path):
             use_binary_cache = True
-        else:
-            # Cache is missing
+        elif not os.path.exists(video_path):
+            # First-run setup: neither cache nor video exists yet.
+            # Ask the user if interactive, otherwise default to yes.
             build_cache_choice = True
             if sys.stdin.isatty():
                 try:
@@ -113,21 +114,19 @@ def play_bad_apple(
 
             if build_cache_choice:
                 cache_downloaded = False
-                # If local video does not exist, try downloading pre-built cache from CDN first (fastest, lightweight)
-                if not os.path.exists(video_path):
-                    try:
-                        download_binary_cache(cache_path)
-                        cache_downloaded = True
-                        use_binary_cache = True
-                    except Exception as e:
-                        print(f"[*] Pre-built cache download unavailable ({e}). Falling back to local build...")
+                # Try downloading pre-built cache from CDN first (fastest, lightweight)
+                try:
+                    download_binary_cache(cache_path)
+                    cache_downloaded = True
+                    use_binary_cache = True
+                except Exception as e:
+                    print(f"[*] Pre-built cache download unavailable ({e}). Falling back to local build...")
 
-                # If CDN download didn't happen/work, build from video locally
+                # If CDN download didn't work (e.g. offline), build from video locally
                 if not cache_downloaded:
                     ensure_package("cv2", "opencv-python-headless")
-                    if not os.path.exists(video_path):
-                        print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
-                        download_video(video_path)
+                    print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
+                    download_video(video_path)
                     print(f"[*] Building BAPB binary cache into '{cache_path}'...")
 
                     def progress(cur, total, el):
@@ -145,6 +144,9 @@ def play_bad_apple(
                         use_binary_cache = False
             else:
                 use_binary_cache = False
+        else:
+            # Video already exists and cache does not: user previously chose real-time video playback mode
+            use_binary_cache = False
 
     if use_binary_cache:
         try:
