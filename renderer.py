@@ -1,6 +1,10 @@
 import shutil
-import cv2
 import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 # Half blocks: Combinations of top and bottom pixels
 HALF_BLOCK_LUT = np.array([" ", "▄", "▀", "█"], dtype="<U1")
@@ -81,11 +85,22 @@ class TerminalRenderer:
         pad_bottom = max(0, avail_h - char_h - pad_top)
         return char_w, char_h, pad_x, pad_top, pad_bottom
 
+    def _resize(self, gray: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
+        """Resizes grayscale/binary matrix using cv2.INTER_AREA or fast pure-NumPy nearest neighbor."""
+        if cv2 is not None:
+            return cv2.resize(gray, (target_w, target_h), interpolation=cv2.INTER_AREA)
+        row_idx = np.linspace(0, gray.shape[0] - 1, target_h).astype(np.int32)
+        col_idx = np.linspace(0, gray.shape[1] - 1, target_w).astype(np.int32)
+        return gray[row_idx[:, None], col_idx]
+
     def render_frame(self, frame_bgr: np.ndarray) -> str:
         """
         Converts an OpenCV BGR frame into a terminal string according to the selected mode.
         """
-        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        if cv2 is not None:
+            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = np.dot(frame_bgr[..., :3], [0.114, 0.587, 0.299]).astype(np.uint8)
         return self._render_core(gray)
 
     def render_binary_frame(self, binary_matrix: np.ndarray) -> str:
@@ -109,7 +124,7 @@ class TerminalRenderer:
         if self.mode == "halfblock":
             pixel_w = char_w
             pixel_h = char_h * 2
-            resized = cv2.resize(gray, (pixel_w, pixel_h), interpolation=cv2.INTER_AREA)
+            resized = self._resize(gray, pixel_w, pixel_h)
             binary = (resized > 127).astype(np.uint8)
 
             top = binary[0::2, :]
@@ -120,7 +135,7 @@ class TerminalRenderer:
         elif self.mode == "braille":
             pixel_w = char_w * 2
             pixel_h = char_h * 4
-            resized = cv2.resize(gray, (pixel_w, pixel_h), interpolation=cv2.INTER_AREA)
+            resized = self._resize(gray, pixel_w, pixel_h)
             binary = (resized > 127).astype(np.uint16)
 
             d1 = binary[0::4, 0::2]
@@ -136,7 +151,7 @@ class TerminalRenderer:
             char_matrix = BRAILLE_LUT[pattern]
 
         else:  # ascii
-            resized = cv2.resize(gray, (char_w, char_h), interpolation=cv2.INTER_AREA)
+            resized = self._resize(gray, char_w, char_h)
             idx = (resized.astype(np.float32) / 256.0 * len(ASCII_CHARS)).astype(np.int32)
             idx = np.clip(idx, 0, len(ASCII_CHARS) - 1)
             char_matrix = ASCII_CHARS[idx]

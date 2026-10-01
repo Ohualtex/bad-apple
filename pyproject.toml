@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bad-apple-in-terminal"
-version = "1.0.1"
+version = "1.1.0"
 authors = [
     { name = "Ohualtex" }
 ]
@@ -26,11 +26,14 @@ classifiers = [
     "Topic :: Terminals",
 ]
 dependencies = [
-    "opencv-python-headless>=4.8.0",
     "pygame>=2.5.0",
     "colorama>=0.4.6",
     "numpy>=1.24.0",
 ]
+
+[project.optional-dependencies]
+opencv = ["opencv-python-headless>=4.8.0"]
+all = ["bad-apple-in-terminal[opencv]"]
 
 [project.scripts]
 bad-apple = "main:main"

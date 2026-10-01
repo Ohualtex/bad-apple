@@ -10,16 +10,31 @@ import time
 # Suppress pygame welcome banner on CLI
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
-# Auto-install missing dependencies for a seamless zero-setup experience
-REQUIRED_PACKAGES = {
-    "cv2": "opencv-python-headless",
+# Core dependencies needed for playback (colorama, pygame, numpy)
+CORE_PACKAGES = {
     "colorama": "colorama",
     "pygame": "pygame",
+    "numpy": "numpy",
 }
 
 
-def ensure_dependencies():
-    """Checks for required third-party packages and auto-installs them via pip if missing."""
+def ensure_package(module_name: str, package_name: str) -> None:
+    """Installs a specific package via pip if it cannot be imported."""
+    try:
+        importlib.import_module(module_name)
+    except ImportError:
+        print(f"[*] Package '{package_name}' is required for this operation.")
+        print(f"[*] Automatically installing '{package_name}' via pip...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+            print(f"[+] '{package_name}' installed successfully!\n")
+        except Exception as exc:
+            print(f"[!] Warning: Failed to install '{package_name}': {exc}", file=sys.stderr)
+            print(f"[!] Please manually run: pip install {package_name}", file=sys.stderr)
+
+
+def ensure_core_dependencies():
+    """Checks for required core packages and auto-installs them via pip if missing."""
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -27,7 +42,7 @@ def ensure_dependencies():
             pass
 
     missing = []
-    for module_name, package_name in REQUIRED_PACKAGES.items():
+    for module_name, package_name in CORE_PACKAGES.items():
         try:
             importlib.import_module(module_name)
         except ImportError:
@@ -38,22 +53,22 @@ def ensure_dependencies():
         print("[*] Automatically installing required packages via pip...")
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
-            print("[+] All dependencies installed successfully!\n")
+            print("[+] All core dependencies installed successfully!\n")
         except Exception as exc:
             print(f"[!] Warning: Automatic dependency installation failed: {exc}", file=sys.stderr)
             print(f"[!] Please manually install them using: pip install {' '.join(missing)}", file=sys.stderr)
 
 
-ensure_dependencies()
+ensure_core_dependencies()
 
 import colorama
-import cv2
 
 from audio import create_audio_player
 from cache import BinaryCacheBuilder, BinaryCacheReader
 from download import (
     DEFAULT_CACHE_NAME,
     download_audio,
+    download_binary_cache,
     download_video,
     get_asset_path,
 )
@@ -79,7 +94,57 @@ def play_bad_apple(
     audio_path = get_asset_path("bad_apple.mp3")
     cache_path = get_asset_path(DEFAULT_CACHE_NAME)
 
-    use_binary_cache = use_cache and os.path.exists(cache_path)
+    use_binary_cache = False
+
+    if use_cache:
+        if os.path.exists(cache_path):
+            use_binary_cache = True
+        else:
+            # Neither cache nor video exists, or cache is missing
+            build_cache_choice = True
+            if not os.path.exists(video_path):
+                if sys.stdin.isatty():
+                    try:
+                        ans = input("Build binary cache now? (recommended) [Y/n]: ").strip().lower()
+                        if ans in ("n", "no"):
+                            build_cache_choice = False
+                    except (EOFError, KeyboardInterrupt):
+                        print()
+                        return
+
+            if build_cache_choice:
+                # Try downloading pre-built cache from CDN first (fastest, lightweight)
+                cache_downloaded = False
+                try:
+                    download_binary_cache(cache_path)
+                    cache_downloaded = True
+                    use_binary_cache = True
+                except Exception as e:
+                    print(f"[*] Pre-built cache download unavailable ({e}). Falling back to local build...")
+
+                # If CDN download didn't work (e.g. offline or release asset pending), build from video
+                if not cache_downloaded:
+                    ensure_package("cv2", "opencv-python-headless")
+                    if not os.path.exists(video_path):
+                        print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
+                        download_video(video_path)
+                    print(f"[*] Building BAPB binary cache into '{cache_path}'...")
+
+                    def progress(cur, total, el):
+                        pct = (cur / total) * 100
+                        fps_val = cur / el if el > 0 else 0
+                        sys.stdout.write(f"\r[*] Encoding frames: {cur}/{total} [{pct:.1f}%] ({fps_val:.0f} fps)")
+                        sys.stdout.flush()
+
+                    try:
+                        BinaryCacheBuilder.build_cache(video_path, cache_path, progress_callback=progress)
+                        print("\n[+] Binary cache successfully created!")
+                        use_binary_cache = True
+                    except Exception as err:
+                        print(f"\n[!] Failed to build binary cache ({err}). Falling back to MP4.", file=sys.stderr)
+                        use_binary_cache = False
+            else:
+                use_binary_cache = False
 
     if use_binary_cache:
         try:
@@ -92,6 +157,9 @@ def play_bad_apple(
             use_binary_cache = False
 
     if not use_binary_cache:
+        ensure_package("cv2", "opencv-python-headless")
+        import cv2
+
         # Verify / download video file
         if not os.path.exists(video_path):
             print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
@@ -138,10 +206,14 @@ def play_bad_apple(
             audio_player.start()
 
         cache_reader = BinaryCacheReader(cache_path) if use_binary_cache else None
-        cap = cv2.VideoCapture(video_path) if not use_binary_cache else None
-        if cap and not cap.isOpened():
-            print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
-            break
+        if not use_binary_cache:
+            import cv2
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
+                break
+        else:
+            cap = None
 
         flush_input_buffer()
         last_terminal_size = shutil.get_terminal_size()
@@ -341,6 +413,7 @@ def main():
     args = parser.parse_args()
 
     if args.build_cache:
+        ensure_package("cv2", "opencv-python-headless")
         video_path = get_asset_path("bad_apple.mp4")
         if not os.path.exists(video_path):
             print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
