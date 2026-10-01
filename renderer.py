@@ -86,6 +86,23 @@ class TerminalRenderer:
         Converts an OpenCV BGR frame into a terminal string according to the selected mode.
         """
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        return self._render_core(gray)
+
+    def render_binary_frame(self, binary_matrix: np.ndarray) -> str:
+        """
+        Converts a 1-bit boolean or uint8 binary frame directly into a terminal string.
+        Skips BGR to grayscale conversion for zero-overhead binary cache playback.
+        """
+        if binary_matrix.dtype == bool:
+            gray = binary_matrix.astype(np.uint8) * 255
+        elif binary_matrix.max() <= 1:
+            gray = binary_matrix * 255
+        else:
+            gray = binary_matrix
+        return self._render_core(gray)
+
+    def _render_core(self, gray: np.ndarray) -> str:
+        """Internal core that maps a 2D grayscale/binary image to terminal characters."""
         char_w, char_h, pad_x, pad_top, pad_bottom = self.get_dimensions()
         indent = " " * pad_x
 

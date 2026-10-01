@@ -50,7 +50,13 @@ import colorama
 import cv2
 
 from audio import create_audio_player
-from download import download_audio, download_video, get_asset_path
+from cache import BinaryCacheBuilder, BinaryCacheReader
+from download import (
+    DEFAULT_CACHE_NAME,
+    download_audio,
+    download_video,
+    get_asset_path,
+)
 from input import (
     create_input_handler,
     enter_alternate_screen,
@@ -66,31 +72,46 @@ def play_bad_apple(
     enable_audio: bool = True,
     target_width: int = None,
     target_height: int = None,
+    use_cache: bool = True,
 ):
     """Main playback loop for the Bad Apple terminal player."""
     video_path = get_asset_path("bad_apple.mp4")
     audio_path = get_asset_path("bad_apple.mp3")
+    cache_path = get_asset_path(DEFAULT_CACHE_NAME)
 
-    # Verify / download video file
-    if not os.path.exists(video_path):
-        print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
-        download_video(video_path)
+    use_binary_cache = use_cache and os.path.exists(cache_path)
+
+    if use_binary_cache:
+        try:
+            with BinaryCacheReader(cache_path) as probe:
+                fps = probe.fps
+                total_frames = probe.total_frames
+                duration = probe.duration
+        except Exception as e:
+            print(f"[!] Warning: Failed to load binary cache ({e}). Falling back to MP4.", file=sys.stderr)
+            use_binary_cache = False
+
+    if not use_binary_cache:
+        # Verify / download video file
+        if not os.path.exists(video_path):
+            print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
+            download_video(video_path)
+
+        # Probe video metadata
+        probe_cap = cv2.VideoCapture(video_path)
+        if not probe_cap.isOpened():
+            print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
+            return
+
+        fps = probe_cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(probe_cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 6573
+        duration = total_frames / fps
+        probe_cap.release()
 
     # Verify / download audio file
     if enable_audio and not os.path.exists(audio_path):
         print(f"[*] Bad Apple audio not found, downloading to '{audio_path}'...")
         download_audio(audio_path)
-
-    # Probe video metadata
-    probe_cap = cv2.VideoCapture(video_path)
-    if not probe_cap.isOpened():
-        print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
-        return
-
-    fps = probe_cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(probe_cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 6573
-    duration = total_frames / fps
-    probe_cap.release()
 
     # Initialize terminal
     colorama.init()
@@ -116,8 +137,9 @@ def play_bad_apple(
         if audio_player:
             audio_player.start()
 
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
+        cache_reader = BinaryCacheReader(cache_path) if use_binary_cache else None
+        cap = cv2.VideoCapture(video_path) if not use_binary_cache else None
+        if cap and not cap.isOpened():
             print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
             break
 
@@ -137,7 +159,8 @@ def play_bad_apple(
                 key = input_handler.get_key()
                 if key == "RIGHT":  # Seek +5s
                     new_frame = min(total_frames - 1, current_frame_idx + int(5 * fps))
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+                    if cap:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
                     current_frame_idx = new_frame
                     now = time.perf_counter()
                     playback_start_time = now - (current_frame_idx / fps)
@@ -145,7 +168,8 @@ def play_bad_apple(
                         audio_player.seek(current_frame_idx / fps)
                 elif key == "LEFT":  # Seek -5s
                     new_frame = max(0, current_frame_idx - int(5 * fps))
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+                    if cap:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
                     current_frame_idx = new_frame
                     now = time.perf_counter()
                     playback_start_time = now - (current_frame_idx / fps)
@@ -168,7 +192,8 @@ def play_bad_apple(
                     mode_idx = (mode_idx + 1) % len(mode_list)
                     renderer.mode = mode_list[mode_idx]
                 elif key == "RESTART":  # Restart from beginning
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    if cap:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     current_frame_idx = 0
                     playback_start_time = time.perf_counter()
                     if audio_player:
@@ -192,19 +217,31 @@ def play_bad_apple(
 
                 # If lagging behind the target frame, skip frames
                 if target_frame_idx > current_frame_idx + 1:
-                    if target_frame_idx - current_frame_idx > 5:
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
-                        current_frame_idx = target_frame_idx
+                    if cap:
+                        if target_frame_idx - current_frame_idx > 5:
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
+                            current_frame_idx = target_frame_idx
+                        else:
+                            while current_frame_idx < target_frame_idx:
+                                cap.grab()
+                                current_frame_idx += 1
                     else:
-                        while current_frame_idx < target_frame_idx:
-                            cap.grab()
-                            current_frame_idx += 1
+                        current_frame_idx = target_frame_idx
 
-                ret, frame = cap.read()
-                if not ret:
-                    finished_naturally = True
-                    break
-                current_frame_idx += 1
+                if cache_reader:
+                    if current_frame_idx >= total_frames:
+                        finished_naturally = True
+                        break
+                    bin_frame = cache_reader.get_frame(current_frame_idx)
+                    current_frame_idx += 1
+                    rendered_str = renderer.render_binary_frame(bin_frame)
+                else:
+                    ret, frame = cap.read()
+                    if not ret:
+                        finished_naturally = True
+                        break
+                    current_frame_idx += 1
+                    rendered_str = renderer.render_frame(frame)
 
                 # 3. Check for terminal resize (Responsive Resizing)
                 current_terminal_size = shutil.get_terminal_size()
@@ -214,10 +251,7 @@ def play_bad_apple(
                     sys.stdout.write("\033[H\033[2J\033[3J")
                     sys.stdout.flush()
 
-                # 4. Render Frame
-                rendered_str = renderer.render_frame(frame)
-
-                # 5. Status Bar with Visual Scrubber
+                # 4. Status Bar with Visual Scrubber
                 status_bar = render_status_bar(
                     current_frame=current_frame_idx,
                     total_frames=total_frames,
@@ -227,11 +261,11 @@ def play_bad_apple(
                     terminal_columns=current_terminal_size.columns,
                 )
 
-                # 6. Write buffer to terminal with clean blank separator line (Flicker-Free)
+                # 5. Write buffer to terminal with clean blank separator line (Flicker-Free)
                 sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
                 sys.stdout.flush()
 
-                # 7. Precision Framerate Timing
+                # 6. Precision Framerate Timing
                 next_frame_time = (current_frame_idx + 1) / fps
                 remaining = next_frame_time - (time.perf_counter() - playback_start_time)
                 if remaining > 0.002:
@@ -240,7 +274,10 @@ def play_bad_apple(
         except KeyboardInterrupt:
             finished_naturally = False
         finally:
-            cap.release()
+            if cache_reader:
+                cache_reader.close()
+            if cap:
+                cap.release()
             if audio_player:
                 audio_player.stop()
             restore_terminal()
@@ -291,12 +328,40 @@ def main():
         default=None,
         help="Target display height (default: automatic terminal height)",
     )
+    parser.add_argument(
+        "--build-cache",
+        action="store_true",
+        help="Pre-renders and builds the bad_apple.bin binary cache for zero-CPU playback and exits",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Forces real-time OpenCV MP4 decoding, ignoring any binary cache",
+    )
     args = parser.parse_args()
+
+    if args.build_cache:
+        video_path = get_asset_path("bad_apple.mp4")
+        if not os.path.exists(video_path):
+            print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
+            download_video(video_path)
+        cache_path = get_asset_path(DEFAULT_CACHE_NAME)
+        print(f"[*] Building BAPB binary cache into '{cache_path}'...")
+        def progress(cur, total, el):
+            pct = (cur / total) * 100
+            fps_val = cur / el if el > 0 else 0
+            sys.stdout.write(f"\r[*] Encoding frames: {cur}/{total} [{pct:.1f}%] ({fps_val:.0f} fps)")
+            sys.stdout.flush()
+        BinaryCacheBuilder.build_cache(video_path, cache_path, progress_callback=progress)
+        print("\n[+] Binary cache successfully created!")
+        return
+
     play_bad_apple(
         mode=args.mode,
         enable_audio=not args.no_audio,
         target_width=args.width,
         target_height=args.height,
+        use_cache=not args.no_cache,
     )
 
 

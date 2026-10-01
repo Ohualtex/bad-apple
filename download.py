@@ -17,6 +17,8 @@ AUDIO_URL = "https://raw.githubusercontent.com/reimunyancat/badapple-with-ascii/
 AUDIO_MD5 = "fd4c1a0b0ead09b5c0ab58e4b1016317"
 DEFAULT_AUDIO_NAME = "bad_apple.mp3"
 
+DEFAULT_CACHE_NAME = "bad_apple.bin"
+
 
 def get_media_cache_dir() -> str:
     """Returns the platform-standard persistent cache directory for Bad Apple media assets."""

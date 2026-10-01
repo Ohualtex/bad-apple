@@ -42,7 +42,7 @@ Repository = "https://github.com/Ohualtex/bad-apple.git"
 Issues = "https://github.com/Ohualtex/bad-apple/issues"
 
 [tool.setuptools]
-py-modules = ["main", "download", "renderer", "ui"]
+py-modules = ["main", "download", "renderer", "ui", "cache"]
 packages = ["audio", "input"]
 
 [tool.ruff.lint.per-file-ignores]
