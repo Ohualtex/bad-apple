@@ -62,7 +62,7 @@ from ui import render_status_bar
 
 
 def play_bad_apple(
-    mode: str = "halfblock",
+    mode: str = "ascii",
     enable_audio: bool = True,
     target_width: int = None,
     target_height: int = None,
@@ -270,9 +270,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["halfblock", "ascii", "braille"],
-        default="halfblock",
-        help="Visual render mode: halfblock (crisp), ascii (classic), braille (ultra high res)",
+        choices=["ascii", "braille", "halfblock"],
+        default="ascii",
+        help="Visual render mode: ascii (classic), braille (ultra high res), halfblock (crisp)",
     )
     parser.add_argument(
         "--no-audio",

@@ -9,9 +9,9 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
 ## Features
 
 - **3 Rendering Modes:**
-  - `halfblock` (Default): 2x vertical resolution using half-block characters (`▀`, `▄`) for crystal-clear silhouettes.
+  - `ascii` (Default): Classic nostalgic ASCII shading (` .:-=+*#%@`).
   - `braille`: Ultra high-resolution rendering using Unicode Braille (2x4 matrix) characters.
-  - `ascii`: Classic nostalgic ASCII shading (` .:-=+*#%@`).
+  - `halfblock`: 2x vertical resolution using half-block characters (`▀`, `▄`) for crystal-clear silhouettes.
 - **Zero-Setup & Auto-Provisioning:** Clones and runs immediately! Automatically installs missing dependencies (`opencv-python-headless`, `colorama`, `pygame`) and downloads video/audio assets with MD5 checksum verification.
 - **Cross-Platform Audio Engine:** Backed by `pygame.mixer` for distortion-free pause/resume and zero-latency seeking, with fallback to native OS drivers on Windows (`winmm.dll` MCI), macOS (`afplay`), and Linux (`ffplay`/`mpv`/`aplay`).
 - **Flicker-Free & Ghost-Free Rendering:** Employs Alternate Screen Buffer (`\033[?1049h`), scrollback buffer purging, and dynamic resizing for a pristine, clean display at 30 FPS.
@@ -22,7 +22,7 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
 | Key | Action |
 |-----|--------|
 | **Space** | Pause / Resume |
-| **M** | Cycle render modes (`halfblock` → `ascii` → `braille`) |
+| **M** | Cycle render modes (`ascii` → `braille` → `halfblock`) |
 | **Right Arrow (→)** | Seek forward 5 seconds |
 | **Left Arrow (←)** | Seek backward 5 seconds |
 | **R** | Restart playback |
@@ -56,7 +56,7 @@ python main.py
 ### Options & Flags
 
 ```bash
-# Start with a specific render mode (halfblock, ascii, braille)
+# Start with a specific render mode (ascii, braille, halfblock)
 bad-apple --mode braille
 
 # Disable audio

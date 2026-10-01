@@ -18,10 +18,10 @@ class TerminalRenderer:
     (Half Block, ASCII, Braille) and centers them on screen.
     """
 
-    MODES = ["halfblock", "ascii", "braille"]
+    MODES = ["ascii", "braille", "halfblock"]
 
-    def __init__(self, mode: str = "halfblock", target_width: int = None, target_height: int = None):
-        self.mode = mode if mode in self.MODES else "halfblock"
+    def __init__(self, mode: str = "ascii", target_width: int = None, target_height: int = None):
+        self.mode = mode if mode in self.MODES else "ascii"
         self.target_width = target_width
         self.target_height = target_height
 
