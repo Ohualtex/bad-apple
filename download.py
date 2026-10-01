@@ -121,8 +121,11 @@ def download_binary_cache(destination: str | None = None) -> str:
 
 
 def download_all():
-    """Downloads and verifies all required media files (video and audio)."""
-    download_video()
+    """Downloads and verifies all required media files (binary cache and audio)."""
+    try:
+        download_binary_cache()
+    except Exception:
+        download_video()
     download_audio()
 
 

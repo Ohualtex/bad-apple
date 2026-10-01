@@ -31,10 +31,6 @@ dependencies = [
     "numpy>=1.24.0",
 ]
 
-[project.optional-dependencies]
-opencv = ["opencv-python-headless>=4.8.0"]
-all = ["bad-apple-in-terminal[opencv]"]
-
 [project.scripts]
 bad-apple = "main:main"
 badapple = "main:main"
