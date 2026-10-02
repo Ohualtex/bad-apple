@@ -72,84 +72,95 @@ class BinaryCacheBuilder:
         # Ensure target directory exists
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         temp_output = output_path + ".tmp"
+        if os.path.exists(temp_output):
+            try:
+                os.remove(temp_output)
+            except OSError:
+                pass
 
         index_entries: list[tuple[int, int]] = []
         index_table_size = total_frames * INDEX_ENTRY_STRUCT.size
 
         start_time = time.perf_counter()
 
-        with open(temp_output, "wb") as f:
-            # 1. Write placeholder header (32 bytes)
-            header_bytes = HEADER_STRUCT.pack(
-                BAPB_MAGIC,
-                BAPB_VERSION,
-                width,
-                height,
-                fps,
-                total_frames,
-                BAPB_COMPRESSION_ZLIB,
-                b"\x00" * 13,
-            )
-            f.write(header_bytes)
-
-            # 2. Reserve space for index table
-            f.write(b"\x00" * index_table_size)
-
-            # 3. Process each frame and append payload
-            frame_idx = 0
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                binary = gray > 127
-                packed_bits = np.packbits(binary).tobytes()
-                compressed = zlib.compress(packed_bits, level=6)
-
-                offset = f.tell()
-                comp_size = len(compressed)
-
-                if comp_size > 65535:
-                    raise BinaryCacheError(f"Frame {frame_idx} compressed size exceeds 64KB uint16 limit ({comp_size} bytes).")
-
-                f.write(compressed)
-                index_entries.append((offset, comp_size))
-                frame_idx += 1
-
-                if progress_callback:
-                    progress_callback(frame_idx, total_frames, time.perf_counter() - start_time)
-
-            cap.release()
-
-            if frame_idx != total_frames:
-                total_frames = frame_idx
-                # Rewrite header with corrected frame count
-                f.seek(0)
-                f.write(
-                    HEADER_STRUCT.pack(
-                        BAPB_MAGIC,
-                        BAPB_VERSION,
-                        width,
-                        height,
-                        fps,
-                        total_frames,
-                        BAPB_COMPRESSION_ZLIB,
-                        b"\x00" * 13,
-                    )
+        try:
+            with open(temp_output, "wb") as f:
+                # 1. Write placeholder header (32 bytes)
+                header_bytes = HEADER_STRUCT.pack(
+                    BAPB_MAGIC,
+                    BAPB_VERSION,
+                    width,
+                    height,
+                    fps,
+                    total_frames,
+                    BAPB_COMPRESSION_ZLIB,
+                    b"\x00" * 13,
                 )
+                f.write(header_bytes)
 
-            # 4. Seek to index table position and write entries
-            f.seek(HEADER_STRUCT.size)
-            index_bytes = bytearray()
-            for offset, size in index_entries:
-                index_bytes.extend(INDEX_ENTRY_STRUCT.pack(offset, size))
-            f.write(index_bytes)
+                # 2. Reserve space for index table
+                f.write(b"\x00" * index_table_size)
 
-        # Replace destination atomically
-        if os.path.exists(output_path):
-            os.remove(output_path)
-        os.rename(temp_output, output_path)
+                # 3. Process each frame and append payload
+                frame_idx = 0
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    binary = gray > 127
+                    packed_bits = np.packbits(binary).tobytes()
+                    compressed = zlib.compress(packed_bits, level=6)
+
+                    offset = f.tell()
+                    comp_size = len(compressed)
+
+                    if comp_size > 65535:
+                        raise BinaryCacheError(f"Frame {frame_idx} compressed size exceeds 64KB uint16 limit ({comp_size} bytes).")
+
+                    f.write(compressed)
+                    index_entries.append((offset, comp_size))
+                    frame_idx += 1
+
+                    if progress_callback:
+                        progress_callback(frame_idx, total_frames, time.perf_counter() - start_time)
+
+                cap.release()
+
+                if frame_idx != total_frames:
+                    total_frames = frame_idx
+                    # Rewrite header with corrected frame count
+                    f.seek(0)
+                    f.write(
+                        HEADER_STRUCT.pack(
+                            BAPB_MAGIC,
+                            BAPB_VERSION,
+                            width,
+                            height,
+                            fps,
+                            total_frames,
+                            BAPB_COMPRESSION_ZLIB,
+                            b"\x00" * 13,
+                        )
+                    )
+
+                # 4. Seek to index table position and write entries
+                f.seek(HEADER_STRUCT.size)
+                index_bytes = bytearray()
+                for offset, size in index_entries:
+                    index_bytes.extend(INDEX_ENTRY_STRUCT.pack(offset, size))
+                f.write(index_bytes)
+
+            # Replace destination atomically
+            os.replace(temp_output, output_path)
+        except Exception:
+            if os.path.exists(temp_output):
+                try:
+                    os.remove(temp_output)
+                except OSError:
+                    pass
+            raise
 
 
 class BinaryCacheReader:
@@ -213,7 +224,12 @@ class BinaryCacheReader:
 
         self._file.seek(offset)
         compressed = self._file.read(size)
-        raw = zlib.decompress(compressed)
+        if len(compressed) < size:
+            raise BinaryCacheError(f"Truncated frame data at index {frame_idx} (expected {size} bytes, got {len(compressed)}).")
+        try:
+            raw = zlib.decompress(compressed)
+        except zlib.error as err:
+            raise BinaryCacheError(f"Corrupted frame payload at index {frame_idx}: {err}") from err
 
         unpacked = np.unpackbits(np.frombuffer(raw, dtype=np.uint8))
         if len(unpacked) > self.expected_unpacked_len:

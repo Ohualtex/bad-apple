@@ -88,17 +88,28 @@ def _download_file(url: str, destination: str, expected_md5: str, label: str) ->
     opener.addheaders = [("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")]
     urllib.request.install_opener(opener)
 
+    temp_destination = destination + ".tmp"
+    if os.path.exists(temp_destination):
+        try:
+            os.remove(temp_destination)
+        except OSError:
+            pass
+
     try:
-        urllib.request.urlretrieve(url, destination, reporthook=ProgressHook())
+        urllib.request.urlretrieve(url, temp_destination, reporthook=ProgressHook())
         print(f"\n[✓] {label} download completed. Checking integrity...")
-        if verify_md5(destination, expected_md5):
+        if verify_md5(temp_destination, expected_md5):
             print(f"[✓] MD5 verification successful! {label} is verified.")
+            os.replace(temp_destination, destination)
             return destination
         else:
             raise ValueError(f"{label} MD5 verification failed! Downloaded file may be corrupted.")
     except Exception as e:
-        if os.path.exists(destination):
-            os.remove(destination)
+        if os.path.exists(temp_destination):
+            try:
+                os.remove(temp_destination)
+            except OSError:
+                pass
         raise RuntimeError(f"Error while downloading {label}: {e}")
 
 
