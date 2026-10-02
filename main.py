@@ -18,23 +18,84 @@ CORE_PACKAGES = {
 }
 
 
-def ensure_package(module_name: str, package_name: str) -> None:
-    """Installs a specific package via pip if it cannot be imported."""
+def install_packages(packages: list[str]) -> bool:
+    """
+    Attempts to install packages using pip, pipx, or uv, respecting isolated environments.
+    Returns True if the installation succeeded, False otherwise.
+    """
+    if not packages:
+        return True
+
+    # 1. Standard python -m pip
+    try:
+        res = subprocess.run(
+            [sys.executable, "-m", "pip", "install", *packages],
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    # 2. If running under a pipx venv
+    if "pipx" in sys.prefix.lower() or "pipx" in sys.executable.lower():
+        pipx_bin = shutil.which("pipx")
+        if pipx_bin:
+            try:
+                res = subprocess.run(
+                    [pipx_bin, "inject", "bad-apple-in-terminal", *packages],
+                    capture_output=True,
+                    text=True,
+                )
+                if res.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+    # 3. If uv is available
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        try:
+            res = subprocess.run(
+                [uv_bin, "pip", "install", "--python", sys.executable, *packages],
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
+def ensure_package(module_name: str, package_name: str) -> bool:
+    """
+    Checks if a module is importable; attempts automatic installation if missing.
+    Returns True if the module is available, False otherwise.
+    """
     try:
         importlib.import_module(module_name)
+        return True
     except ImportError:
-        print(f"[*] Package '{package_name}' is required for this operation.")
-        print(f"[*] Automatically installing '{package_name}' via pip...")
+        pass
+
+    print(f"[*] Package '{package_name}' is required for this operation.")
+    print(f"[*] Automatically installing '{package_name}'...")
+    if install_packages([package_name]):
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+            importlib.import_module(module_name)
             print(f"[+] '{package_name}' installed successfully!\n")
-        except Exception as exc:
-            print(f"[!] Warning: Failed to install '{package_name}': {exc}", file=sys.stderr)
-            print(f"[!] Please manually run: pip install {package_name}", file=sys.stderr)
+            return True
+        except ImportError:
+            pass
+
+    return False
 
 
 def ensure_core_dependencies():
-    """Checks for required core packages and auto-installs them via pip if missing."""
+    """Checks for required core packages and auto-installs them via pip/pipx/uv if missing."""
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -50,13 +111,15 @@ def ensure_core_dependencies():
 
     if missing:
         print(f"[*] Missing dependencies detected: {', '.join(missing)}")
-        print("[*] Automatically installing required packages via pip...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+        print("[*] Automatically installing required packages...")
+        if install_packages(missing):
             print("[+] All core dependencies installed successfully!\n")
-        except Exception as exc:
-            print(f"[!] Warning: Automatic dependency installation failed: {exc}", file=sys.stderr)
-            print(f"[!] Please manually install them using: pip install {' '.join(missing)}", file=sys.stderr)
+        else:
+            print("[!] Warning: Automatic dependency installation failed.", file=sys.stderr)
+            if "pipx" in sys.prefix.lower():
+                print(f"[!] Please manually run: pipx inject bad-apple-in-terminal {' '.join(missing)}", file=sys.stderr)
+            else:
+                print(f"[!] Please manually run: pip install {' '.join(missing)}", file=sys.stderr)
 
 
 ensure_core_dependencies()
@@ -105,7 +168,11 @@ def play_bad_apple(
             build_cache_choice = True
             if sys.stdin.isatty():
                 try:
-                    ans = input("Build binary cache now? (recommended) [Y/n]: ").strip().lower()
+                    ans = (
+                        input("Download optimized binary playback cache? (recommended: zero-CPU, ~7.7 MB) [Y/n]: ")
+                        .strip()
+                        .lower()
+                    )
                     if ans in ("n", "no"):
                         build_cache_choice = False
                 except (EOFError, KeyboardInterrupt):
@@ -124,29 +191,49 @@ def play_bad_apple(
 
                 # If CDN download didn't work (e.g. offline), build from video locally
                 if not cache_downloaded:
-                    ensure_package("cv2", "opencv-python-headless")
-                    print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
-                    download_video(video_path)
-                    print(f"[*] Building BAPB binary cache into '{cache_path}'...")
-
-                    def progress(cur, total, el):
-                        pct = (cur / total) * 100
-                        fps_val = cur / el if el > 0 else 0
-                        sys.stdout.write(f"\r[*] Encoding frames: {cur}/{total} [{pct:.1f}%] ({fps_val:.0f} fps)")
-                        sys.stdout.flush()
-
-                    try:
-                        BinaryCacheBuilder.build_cache(video_path, cache_path, progress_callback=progress)
-                        print("\n[+] Binary cache successfully created!")
-                        use_binary_cache = True
-                    except Exception as err:
-                        print(f"\n[!] Failed to build binary cache ({err}). Falling back to MP4.", file=sys.stderr)
+                    if not ensure_package("cv2", "opencv-python-headless"):
+                        print("[!] Warning: OpenCV is required to build cache locally but could not be installed.", file=sys.stderr)
                         use_binary_cache = False
+                    else:
+                        print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
+                        download_video(video_path)
+                        print(f"[*] Building BAPB binary cache into '{cache_path}'...")
+
+                        def progress(cur, total, el):
+                            pct = (cur / total) * 100
+                            fps_val = cur / el if el > 0 else 0
+                            sys.stdout.write(f"\r[*] Encoding frames: {cur}/{total} [{pct:.1f}%] ({fps_val:.0f} fps)")
+                            sys.stdout.flush()
+
+                        try:
+                            BinaryCacheBuilder.build_cache(video_path, cache_path, progress_callback=progress)
+                            print("\n[+] Binary cache successfully created!")
+                            use_binary_cache = True
+                        except Exception as err:
+                            print(f"\n[!] Failed to build binary cache ({err}). Falling back to MP4.", file=sys.stderr)
+                            use_binary_cache = False
             else:
                 use_binary_cache = False
         else:
             # Video already exists and cache does not: user previously chose real-time video playback mode
             use_binary_cache = False
+
+    if not use_binary_cache:
+        if not ensure_package("cv2", "opencv-python-headless"):
+            print("[!] Warning: 'opencv-python-headless' is required for real-time MP4 playback but could not be installed.", file=sys.stderr)
+            if "pipx" in sys.prefix.lower():
+                print("[!] Tip: Under pipx, install it with: pipx inject bad-apple-in-terminal opencv-python-headless", file=sys.stderr)
+            else:
+                print("[!] Please manually install it via: pip install opencv-python-headless", file=sys.stderr)
+
+            # Defensive fallback to CDN binary cache (zero OpenCV required)
+            print("[*] Automatically falling back to pre-rendered binary playback (zero OpenCV required)...")
+            try:
+                download_binary_cache(cache_path)
+                use_binary_cache = True
+            except Exception as e:
+                print(f"[!] Error: Could not download binary cache either ({e}). Exiting.", file=sys.stderr)
+                return
 
     if use_binary_cache:
         try:
@@ -155,11 +242,9 @@ def play_bad_apple(
                 total_frames = probe.total_frames
                 duration = probe.duration
         except Exception as e:
-            print(f"[!] Warning: Failed to load binary cache ({e}). Falling back to MP4.", file=sys.stderr)
-            use_binary_cache = False
-
-    if not use_binary_cache:
-        ensure_package("cv2", "opencv-python-headless")
+            print(f"[!] Error: Failed to load binary cache ({e}). Exiting.", file=sys.stderr)
+            return
+    else:
         import cv2
 
         # Verify / download video file
@@ -492,8 +577,19 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.width is not None and args.width < 4:
+        parser.error("--width must be at least 4")
+    if args.height is not None and args.height < 2:
+        parser.error("--height must be at least 2")
+
     if args.build_cache:
-        ensure_package("cv2", "opencv-python-headless")
+        if not ensure_package("cv2", "opencv-python-headless"):
+            print("[!] Error: OpenCV ('opencv-python-headless') is required to build binary cache from MP4.", file=sys.stderr)
+            if "pipx" in sys.prefix.lower():
+                print("[!] Tip: Under pipx, install it with: pipx inject bad-apple-in-terminal opencv-python-headless", file=sys.stderr)
+            else:
+                print("[!] Please manually install it via: pip install opencv-python-headless", file=sys.stderr)
+            return
         video_path = get_asset_path("bad_apple.mp4")
         if not os.path.exists(video_path):
             print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
