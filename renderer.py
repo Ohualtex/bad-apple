@@ -36,8 +36,8 @@ class TerminalRenderer:
         """
         cols, lines = shutil.get_terminal_size(fallback=(80, 24))
         # Leave 3 lines for status bar, blank line separator and safe margin, and 2 columns to prevent auto-wrap
-        avail_w = self.target_width or max(20, cols - 2)
-        avail_h = self.target_height or max(10, lines - 3)
+        avail_w = max(4, self.target_width) if self.target_width is not None else max(20, cols - 2)
+        avail_h = max(2, self.target_height) if self.target_height is not None else max(10, lines - 3)
 
         # Bad Apple original aspect ratio: 4:3 (1.333)
         # Terminal character cell ratio is typically ~1:2 (height is ~2x width).
@@ -110,8 +110,8 @@ class TerminalRenderer:
         """
         if binary_matrix.dtype == bool:
             gray = binary_matrix.astype(np.uint8) * 255
-        elif binary_matrix.max() <= 1:
-            gray = binary_matrix * 255
+        elif binary_matrix.dtype == np.uint8:
+            gray = (binary_matrix > 0).astype(np.uint8) * 255
         else:
             gray = binary_matrix
         return self._render_core(gray)
