@@ -226,6 +226,9 @@ def play_bad_apple(
         is_paused = False
         pause_start_time = 0.0
         finished_naturally = False
+        last_raw_frame = None
+        is_raw_binary = bool(cache_reader)
+        needs_redraw = False
 
         try:
             while True:
@@ -238,6 +241,20 @@ def play_bad_apple(
                     current_frame_idx = new_frame
                     now = time.perf_counter()
                     playback_start_time = now - (current_frame_idx / fps)
+                    if is_paused:
+                        pause_start_time = now
+                        if cache_reader:
+                            try:
+                                last_raw_frame = cache_reader.get_frame(current_frame_idx)
+                                needs_redraw = True
+                            except Exception:
+                                pass
+                        elif cap:
+                            ret, frame = cap.read()
+                            if ret:
+                                last_raw_frame = frame
+                                cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
+                                needs_redraw = True
                     if audio_player:
                         audio_player.seek(current_frame_idx / fps)
                 elif key == "LEFT":  # Seek -5s
@@ -247,6 +264,20 @@ def play_bad_apple(
                     current_frame_idx = new_frame
                     now = time.perf_counter()
                     playback_start_time = now - (current_frame_idx / fps)
+                    if is_paused:
+                        pause_start_time = now
+                        if cache_reader:
+                            try:
+                                last_raw_frame = cache_reader.get_frame(current_frame_idx)
+                                needs_redraw = True
+                            except Exception:
+                                pass
+                        elif cap:
+                            ret, frame = cap.read()
+                            if ret:
+                                last_raw_frame = frame
+                                cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
+                                needs_redraw = True
                     if audio_player:
                         audio_player.seek(current_frame_idx / fps)
                 elif key == "QUIT":  # Exit (Q or ESC)
@@ -257,27 +288,71 @@ def play_bad_apple(
                         pause_start_time = time.perf_counter()
                         if audio_player:
                             audio_player.pause()
+                        needs_redraw = True
                     else:
                         pause_duration = time.perf_counter() - pause_start_time
                         playback_start_time += pause_duration
                         if audio_player:
                             audio_player.resume()
+                        needs_redraw = True
                 elif key == "MODE":  # Switch mode
                     mode_idx = (mode_idx + 1) % len(mode_list)
                     renderer.mode = mode_list[mode_idx]
+                    if is_paused:
+                        needs_redraw = True
                 elif key == "RESTART":  # Restart from beginning
                     if cap:
                         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     current_frame_idx = 0
                     playback_start_time = time.perf_counter()
+                    pause_start_time = playback_start_time
                     if audio_player:
                         audio_player.seek(0)
-                        audio_player.resume()
-                    is_paused = False
+                        if not is_paused:
+                            audio_player.resume()
+                    if is_paused:
+                        if cache_reader:
+                            try:
+                                last_raw_frame = cache_reader.get_frame(0)
+                                needs_redraw = True
+                            except Exception:
+                                pass
+                        elif cap:
+                            ret, frame = cap.read()
+                            if ret:
+                                last_raw_frame = frame
+                                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                                needs_redraw = True
 
-                # If paused, sleep briefly
+                # If paused, handle resize and immediate frame redrawing
                 if is_paused:
-                    time.sleep(0.05)
+                    current_terminal_size = shutil.get_terminal_size()
+                    if current_terminal_size != last_terminal_size:
+                        last_terminal_size = current_terminal_size
+                        sys.stdout.write("\033[H\033[2J\033[3J")
+                        sys.stdout.flush()
+                        needs_redraw = True
+
+                    if needs_redraw and last_raw_frame is not None:
+                        if is_raw_binary:
+                            rendered_str = renderer.render_binary_frame(last_raw_frame)
+                        else:
+                            rendered_str = renderer.render_frame(last_raw_frame)
+
+                        status_bar = render_status_bar(
+                            current_frame=current_frame_idx,
+                            total_frames=total_frames,
+                            fps=fps,
+                            duration=duration,
+                            mode=renderer.mode,
+                            terminal_columns=current_terminal_size.columns,
+                            is_paused=True,
+                        )
+                        sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
+                        sys.stdout.flush()
+                        needs_redraw = False
+
+                    time.sleep(0.02)
                     continue
 
                 # 2. Audio-Video Synchronization
@@ -308,6 +383,7 @@ def play_bad_apple(
                         break
                     bin_frame = cache_reader.get_frame(current_frame_idx)
                     current_frame_idx += 1
+                    last_raw_frame = bin_frame
                     rendered_str = renderer.render_binary_frame(bin_frame)
                 else:
                     ret, frame = cap.read()
@@ -315,6 +391,7 @@ def play_bad_apple(
                         finished_naturally = True
                         break
                     current_frame_idx += 1
+                    last_raw_frame = frame
                     rendered_str = renderer.render_frame(frame)
 
                 # 3. Check for terminal resize (Responsive Resizing)
@@ -333,6 +410,7 @@ def play_bad_apple(
                     duration=duration,
                     mode=renderer.mode,
                     terminal_columns=current_terminal_size.columns,
+                    is_paused=is_paused,
                 )
 
                 # 5. Write buffer to terminal with clean blank separator line (Flicker-Free)
