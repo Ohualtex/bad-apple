@@ -1,5 +1,6 @@
 import hashlib
 import os
+import socket
 import sys
 import urllib.request
 
@@ -18,7 +19,11 @@ AUDIO_MD5 = "fd4c1a0b0ead09b5c0ab58e4b1016317"
 DEFAULT_AUDIO_NAME = "bad_apple.mp3"
 
 DEFAULT_CACHE_NAME = "bad_apple.bin"
-CACHE_URL = "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.1/bad_apple.bin"
+CACHE_URLS = [
+    "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.2/bad_apple.bin",
+    "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.1/bad_apple.bin",
+]
+CACHE_URL = CACHE_URLS[0]
 CACHE_MD5 = "bfb923d8e071539a4b23a9a9fabe6b04"
 
 
@@ -56,7 +61,7 @@ def verify_md5(file_path: str, expected_md5: str) -> bool:
     return hasher.hexdigest().lower() == expected_md5.lower()
 
 
-def _download_file(url: str, destination: str, expected_md5: str, label: str) -> str:
+def _download_file(url_or_urls: str | list[str], destination: str, expected_md5: str, label: str) -> str:
     if os.path.exists(destination):
         print(f"[*] '{destination}' ({label}) already exists. Checking integrity...")
         if verify_md5(destination, expected_md5):
@@ -66,7 +71,10 @@ def _download_file(url: str, destination: str, expected_md5: str, label: str) ->
             print(f"[!] Existing {label} is corrupted or incomplete, re-downloading...")
             os.remove(destination)
 
-    print(f"[*] Downloading {label}: {url}")
+    urls = [url_or_urls] if isinstance(url_or_urls, str) else list(url_or_urls)
+
+    # Guard against indefinite silent socket hangs
+    socket.setdefaulttimeout(30.0)
 
     class ProgressHook:
         def __init__(self):
@@ -88,29 +96,41 @@ def _download_file(url: str, destination: str, expected_md5: str, label: str) ->
     opener.addheaders = [("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")]
     urllib.request.install_opener(opener)
 
-    temp_destination = destination + ".tmp"
-    if os.path.exists(temp_destination):
-        try:
-            os.remove(temp_destination)
-        except OSError:
-            pass
-
-    try:
-        urllib.request.urlretrieve(url, temp_destination, reporthook=ProgressHook())
-        print(f"\n[✓] {label} download completed. Checking integrity...")
-        if verify_md5(temp_destination, expected_md5):
-            print(f"[✓] MD5 verification successful! {label} is verified.")
-            os.replace(temp_destination, destination)
-            return destination
+    last_error: Exception | None = None
+    for idx, url in enumerate(urls, 1):
+        if len(urls) > 1:
+            print(f"[*] Downloading {label} (source {idx}/{len(urls)}): {url}")
         else:
-            raise ValueError(f"{label} MD5 verification failed! Downloaded file may be corrupted.")
-    except Exception as e:
+            print(f"[*] Downloading {label}: {url}")
+
+        temp_destination = destination + ".tmp"
         if os.path.exists(temp_destination):
             try:
                 os.remove(temp_destination)
             except OSError:
                 pass
-        raise RuntimeError(f"Error while downloading {label}: {e}")
+
+        try:
+            urllib.request.urlretrieve(url, temp_destination, reporthook=ProgressHook())
+            print(f"\n[✓] {label} download completed. Checking integrity...")
+            if verify_md5(temp_destination, expected_md5):
+                print(f"[✓] MD5 verification successful! {label} is verified.")
+                os.replace(temp_destination, destination)
+                return destination
+            else:
+                raise ValueError(f"{label} MD5 verification failed! Downloaded file may be corrupted.")
+        except Exception as e:
+            last_error = e
+            if os.path.exists(temp_destination):
+                try:
+                    os.remove(temp_destination)
+                except OSError:
+                    pass
+            print(f"\n[!] Failed to download from {url}: {e}")
+            if idx < len(urls):
+                print("[*] Retrying with fallback source...")
+
+    raise RuntimeError(f"Error while downloading {label} after trying {len(urls)} source(s): {last_error}")
 
 
 def download_video(destination: str | None = None) -> str:
@@ -128,7 +148,7 @@ def download_audio(destination: str | None = None) -> str:
 def download_binary_cache(destination: str | None = None) -> str:
     """Downloads the pre-rendered Bad Apple BAPB binary cache file."""
     dest = destination or get_asset_path(DEFAULT_CACHE_NAME)
-    return _download_file(CACHE_URL, dest, CACHE_MD5, "Bad Apple Binary Cache")
+    return _download_file(CACHE_URLS, dest, CACHE_MD5, "Bad Apple Binary Cache")
 
 
 def download_all():
