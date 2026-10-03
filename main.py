@@ -3,6 +3,7 @@ import atexit
 import importlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -277,6 +278,18 @@ def play_bad_apple(
             pass
 
     atexit.register(restore_terminal)
+
+    def _handle_exit_signal(signum, frame):
+        restore_terminal()
+        sys.exit(0)
+
+    for sig_name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _handle_exit_signal)
+            except Exception:
+                pass
 
     renderer = TerminalRenderer(mode=mode, target_width=target_width, target_height=target_height)
     audio_player = create_audio_player(audio_path) if enable_audio else None

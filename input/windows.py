@@ -40,7 +40,9 @@ class WindowsInputHandler(BaseInputHandler):
                 return "LEFT"
             return None
 
-        if ch == b" ":
+        if ch == b"\x03":
+            raise KeyboardInterrupt
+        elif ch == b" ":
             return "SPACE"
         elif ch in (b"q", b"Q", b"\x1b"):
             return "QUIT"
