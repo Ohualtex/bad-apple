@@ -83,6 +83,7 @@ class LinuxAudioPlayer(BaseAudioPlayer):
 
     def seek(self, seconds: float) -> None:
         if self._cmd in ("ffplay", "mpv"):
+            was_paused = self.is_paused
             self.stop()
             try:
                 cmd = [self._cmd]
@@ -97,6 +98,8 @@ class LinuxAudioPlayer(BaseAudioPlayer):
                 )
                 self.is_open = True
                 self.is_paused = False
+                if was_paused:
+                    self.pause()
             except Exception:
                 pass
 
