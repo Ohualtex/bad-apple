@@ -57,13 +57,20 @@ def create_audio_player(media_path: str = "bad_apple.mp3") -> BaseAudioPlayer:
         except Exception:
             pass
 
-    elif sys.platform == "darwin" and MacAfplayAudioPlayer.is_available():
-        try:
-            return MacAfplayAudioPlayer(media_path)
-        except Exception:
-            pass
+    elif sys.platform == "darwin":
+        # On macOS, prioritize ffplay/mpv if installed (superior seeking and clean pause/resume)
+        if LinuxAudioPlayer.is_available():
+            try:
+                return LinuxAudioPlayer(media_path)
+            except Exception:
+                pass
+        if MacAfplayAudioPlayer.is_available():
+            try:
+                return MacAfplayAudioPlayer(media_path)
+            except Exception:
+                pass
 
-    elif sys.platform.startswith("linux") and LinuxAudioPlayer.is_available():
+    elif (sys.platform.startswith("linux") or sys.platform.startswith("freebsd")) and LinuxAudioPlayer.is_available():
         try:
             return LinuxAudioPlayer(media_path)
         except Exception:

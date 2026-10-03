@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from .base import BaseAudioPlayer
 
 
@@ -23,6 +24,9 @@ class MacAfplayAudioPlayer(BaseAudioPlayer):
         if not shutil.which("afplay"):
             raise RuntimeError("afplay command not found on macOS.")
         self._proc = None
+        self._start_perf: float | None = None
+        self._seek_offset: float = 0.0
+        self._paused_pos: float | None = None
 
     @classmethod
     def is_available(cls) -> bool:
@@ -42,6 +46,9 @@ class MacAfplayAudioPlayer(BaseAudioPlayer):
             )
             self.is_open = True
             self.is_paused = False
+            self._start_perf = time.perf_counter()
+            self._seek_offset = 0.0
+            self._paused_pos = None
         except Exception:
             self._proc = None
             self.is_open = False
@@ -53,6 +60,7 @@ class MacAfplayAudioPlayer(BaseAudioPlayer):
                 try:
                     os.kill(self._proc.pid, sig_stop)
                     self.is_paused = True
+                    self._paused_pos = self.get_time()
                 except Exception:
                     pass
 
@@ -63,6 +71,10 @@ class MacAfplayAudioPlayer(BaseAudioPlayer):
                 try:
                     os.kill(self._proc.pid, sig_cont)
                     self.is_paused = False
+                    if self._paused_pos is not None:
+                        self._start_perf = time.perf_counter()
+                        self._seek_offset = self._paused_pos
+                        self._paused_pos = None
                 except Exception:
                     pass
 
@@ -104,3 +116,19 @@ class MacAfplayAudioPlayer(BaseAudioPlayer):
                 self._proc = None
                 self.is_open = False
                 self.is_paused = False
+                self._start_perf = None
+                self._seek_offset = 0.0
+                self._paused_pos = None
+
+    def get_time(self) -> float | None:
+        """
+        Returns estimated audio playback position in seconds based on monotonic tracking.
+        """
+        if not self.is_open:
+            return None
+        if self.is_paused:
+            return self._paused_pos
+        if self._start_perf is not None:
+            return self._seek_offset + (time.perf_counter() - self._start_perf)
+        return None
+

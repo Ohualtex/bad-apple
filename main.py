@@ -355,6 +355,10 @@ def play_bad_apple(
                                 needs_redraw = True
                     if audio_player:
                         audio_player.seek(current_frame_idx / fps)
+                        if not is_paused:
+                            audio_pos = audio_player.get_time()
+                            if audio_pos is not None:
+                                playback_start_time = time.perf_counter() - audio_pos
                 elif key == "LEFT":  # Seek -5s
                     new_frame = max(0, current_frame_idx - int(5 * fps))
                     if cap:
@@ -378,6 +382,10 @@ def play_bad_apple(
                                 needs_redraw = True
                     if audio_player:
                         audio_player.seek(current_frame_idx / fps)
+                        if not is_paused:
+                            audio_pos = audio_player.get_time()
+                            if audio_pos is not None:
+                                playback_start_time = time.perf_counter() - audio_pos
                 elif key == "QUIT":  # Exit (Q or ESC)
                     break
                 elif key == "SPACE":  # Pause / Resume
@@ -388,10 +396,17 @@ def play_bad_apple(
                             audio_player.pause()
                         needs_redraw = True
                     else:
-                        pause_duration = time.perf_counter() - pause_start_time
-                        playback_start_time += pause_duration
                         if audio_player:
                             audio_player.resume()
+                            audio_pos = audio_player.get_time()
+                            if audio_pos is not None:
+                                playback_start_time = time.perf_counter() - audio_pos
+                            else:
+                                pause_duration = time.perf_counter() - pause_start_time
+                                playback_start_time += pause_duration
+                        else:
+                            pause_duration = time.perf_counter() - pause_start_time
+                            playback_start_time += pause_duration
                         needs_redraw = True
                 elif key == "MODE":  # Switch mode
                     mode_idx = (mode_idx + 1) % len(mode_list)
@@ -408,6 +423,9 @@ def play_bad_apple(
                         audio_player.seek(0)
                         if not is_paused:
                             audio_player.resume()
+                            audio_pos = audio_player.get_time()
+                            if audio_pos is not None:
+                                playback_start_time = time.perf_counter() - audio_pos
                     if is_paused:
                         if cache_reader:
                             try:
@@ -453,10 +471,15 @@ def play_bad_apple(
                     time.sleep(0.02)
                     continue
 
-                # 2. Audio-Video Synchronization
-                now = time.perf_counter()
-                elapsed = now - playback_start_time
-                target_frame_idx = int(elapsed * fps)
+                # 2. Audio-Video Synchronization (Audio Master Clock)
+                audio_pos = audio_player.get_time() if (audio_player and not is_paused) else None
+                if audio_pos is not None:
+                    target_frame_idx = int(audio_pos * fps)
+                    playback_start_time = time.perf_counter() - audio_pos
+                else:
+                    now = time.perf_counter()
+                    elapsed = now - playback_start_time
+                    target_frame_idx = int(elapsed * fps)
 
                 if target_frame_idx >= total_frames:
                     finished_naturally = True
@@ -516,7 +539,7 @@ def play_bad_apple(
                 sys.stdout.flush()
 
                 # 6. Precision Framerate Timing
-                next_frame_time = (current_frame_idx + 1) / fps
+                next_frame_time = current_frame_idx / fps
                 remaining = next_frame_time - (time.perf_counter() - playback_start_time)
                 if remaining > 0.002:
                     time.sleep(remaining)

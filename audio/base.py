@@ -42,6 +42,13 @@ class BaseAudioPlayer(ABC):
         """Stops playback and releases all system audio resources."""
         pass
 
+    def get_time(self) -> float | None:
+        """
+        Returns the current audio playback position in seconds,
+        or None if unsupported or closed.
+        """
+        return None
+
     def __del__(self):
         try:
             self.stop()

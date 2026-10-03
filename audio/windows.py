@@ -70,3 +70,19 @@ class WindowsMciAudioPlayer(BaseAudioPlayer):
             self._send_mci(f"close {self.alias}")
             self.is_open = False
             self.is_paused = False
+
+    def get_time(self) -> float | None:
+        """
+        Returns the current playback position in seconds via MCI status query.
+        """
+        if not self.is_open or not self._winmm:
+            return None
+        buf = ctypes.create_unicode_buffer(128)
+        res = self._winmm.mciSendStringW(f"status {self.alias} position", buf, 128, 0)
+        if res == 0:
+            try:
+                return float(buf.value) / 1000.0
+            except (ValueError, TypeError):
+                pass
+        return None
+
