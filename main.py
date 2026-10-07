@@ -11,10 +11,9 @@ import time
 # Suppress pygame welcome banner on CLI
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
-# Core dependencies needed for playback (colorama, pygame, numpy)
+# Core dependencies needed for playback (colorama, numpy)
 CORE_PACKAGES = {
     "colorama": "colorama",
-    "pygame": "pygame",
     "numpy": "numpy",
 }
 

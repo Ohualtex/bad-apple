@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bad-apple-in-terminal"
-version = "1.1.4"
+version = "1.1.5"
 authors = [
     { name = "Ohualtex" }
 ]
@@ -28,10 +28,12 @@ classifiers = [
     "Topic :: Terminals",
 ]
 dependencies = [
-    "pygame>=2.5.0",
     "colorama>=0.4.6",
     "numpy>=1.24.0",
 ]
+
+[project.optional-dependencies]
+pygame = ["pygame>=2.5.0"]
 
 [project.scripts]
 bad-apple = "main:main"
