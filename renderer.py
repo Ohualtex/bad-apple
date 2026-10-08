@@ -28,6 +28,13 @@ class TerminalRenderer:
         self.mode = mode if mode in self.MODES else "ascii"
         self.target_width = target_width
         self.target_height = target_height
+        self._grid_key = None
+        self._y0 = None
+        self._y1 = None
+        self._x0 = None
+        self._x1 = None
+        self._areas = None
+        self._cum = None
 
     def get_dimensions(self) -> tuple[int, int, int, int, int]:
         """
@@ -86,12 +93,40 @@ class TerminalRenderer:
         return char_w, char_h, pad_x, pad_top, pad_bottom
 
     def _resize(self, gray: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
-        """Resizes grayscale/binary matrix using cv2.INTER_AREA or fast pure-NumPy nearest neighbor."""
+        """Resizes grayscale/binary matrix using cv2.INTER_AREA or fast pure-NumPy box filter downsampling."""
         if cv2 is not None:
             return cv2.resize(gray, (target_w, target_h), interpolation=cv2.INTER_AREA)
-        row_idx = np.linspace(0, gray.shape[0] - 1, target_h).astype(np.int32)
-        col_idx = np.linspace(0, gray.shape[1] - 1, target_w).astype(np.int32)
-        return gray[row_idx[:, None], col_idx]
+
+        h, w = gray.shape
+        # Fallback to nearest-neighbor if upsampling
+        if target_w >= w or target_h >= h:
+            row_idx = np.linspace(0, h - 1, target_h).astype(np.int32)
+            col_idx = np.linspace(0, w - 1, target_w).astype(np.int32)
+            return gray[row_idx[:, None], col_idx]
+
+        # Area averaging via 2D summed-area table (integral image)
+        grid_key = (h, w, target_w, target_h)
+        if self._grid_key != grid_key:
+            y_edges = np.round(np.linspace(0, h, target_h + 1)).astype(np.int32)
+            x_edges = np.round(np.linspace(0, w, target_w + 1)).astype(np.int32)
+            self._y0 = y_edges[:-1, None]
+            self._y1 = y_edges[1:, None]
+            self._x0 = x_edges[None, :-1]
+            self._x1 = x_edges[None, 1:]
+            self._areas = np.maximum((self._y1 - self._y0) * (self._x1 - self._x0), 1).astype(np.float32)
+            self._cum = np.zeros((h + 1, w + 1), dtype=np.uint32)
+            self._grid_key = grid_key
+
+        np.cumsum(gray, axis=0, dtype=np.uint32, out=self._cum[1:, 1:])
+        np.cumsum(self._cum[1:, 1:], axis=1, dtype=np.uint32, out=self._cum[1:, 1:])
+
+        sums = (
+            self._cum[self._y1, self._x1]
+            - self._cum[self._y0, self._x1]
+            - self._cum[self._y1, self._x0]
+            + self._cum[self._y0, self._x0]
+        )
+        return (sums / self._areas).astype(np.uint8)
 
     def render_frame(self, frame_bgr: np.ndarray) -> str:
         """
