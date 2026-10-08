@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Publish to PyPI and GitHub Releases
 
 on:
   push:
@@ -9,8 +9,10 @@ on:
 
 jobs:
   build-and-publish:
-    name: Build distribution and publish to PyPI
+    name: Build distribution and publish to PyPI and GitHub
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -33,3 +35,11 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*
