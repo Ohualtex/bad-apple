@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 
 # Media assets & binary cache
+assets/
 *.mp4
 *.mp3
 *.bin
