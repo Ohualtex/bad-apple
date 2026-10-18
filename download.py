@@ -45,10 +45,14 @@ def get_asset_path(filename: str) -> str:
     """
     Finds the asset path:
     1. If exists in current working directory, use local file.
-    2. Otherwise, returns the path inside the platform cache directory.
+    2. If exists in ./assets/, use local assets file.
+    3. Otherwise, returns the path inside the platform cache directory.
     """
     if os.path.exists(filename):
         return filename
+    local_asset = os.path.join("assets", filename)
+    if os.path.exists(local_asset):
+        return local_asset
     return os.path.join(get_media_cache_dir(), filename)
 
 

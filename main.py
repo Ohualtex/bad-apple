@@ -1,146 +1,32 @@
+"""
+Bad Apple!! Terminal ASCII & Unicode Player
+High-performance, OS-agnostic terminal playback driven by Audio Master Clock.
+"""
+
 import argparse
-import atexit
-import importlib
 import os
-import shutil
-import signal
-import subprocess
 import sys
 import time
 
 # Suppress pygame welcome banner on CLI
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
-# Core dependencies needed for playback (colorama, numpy)
-CORE_PACKAGES = {
-    "colorama": "colorama",
-    "numpy": "numpy",
-}
-
-
-def install_packages(packages: list[str]) -> bool:
-    """
-    Attempts to install packages using pip, pipx, or uv, respecting isolated environments.
-    Returns True if the installation succeeded, False otherwise.
-    """
-    if not packages:
-        return True
-
-    # 1. Standard python -m pip
+if hasattr(sys.stdout, "reconfigure"):
     try:
-        res = subprocess.run(
-            [sys.executable, "-m", "pip", "install", *packages],
-            capture_output=True,
-            text=True,
-        )
-        if res.returncode == 0:
-            return True
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
-    # 2. If running under a pipx venv
-    if "pipx" in sys.prefix.lower() or "pipx" in sys.executable.lower():
-        pipx_bin = shutil.which("pipx")
-        if pipx_bin:
-            try:
-                res = subprocess.run(
-                    [pipx_bin, "inject", "bad-apple-in-terminal", *packages],
-                    capture_output=True,
-                    text=True,
-                )
-                if res.returncode == 0:
-                    return True
-            except Exception:
-                pass
-
-    # 3. If uv is available
-    uv_bin = shutil.which("uv")
-    if uv_bin:
-        try:
-            res = subprocess.run(
-                [uv_bin, "pip", "install", "--python", sys.executable, *packages],
-                capture_output=True,
-                text=True,
-            )
-            if res.returncode == 0:
-                return True
-        except Exception:
-            pass
-
-    return False
-
-
-def ensure_package(module_name: str, package_name: str) -> bool:
-    """
-    Checks if a module is importable; attempts automatic installation if missing.
-    Returns True if the module is available, False otherwise.
-    """
-    try:
-        importlib.import_module(module_name)
-        return True
-    except ImportError:
-        pass
-
-    print(f"[*] Package '{package_name}' is required for this operation.")
-    print(f"[*] Automatically installing '{package_name}'...")
-    if install_packages([package_name]):
-        try:
-            importlib.import_module(module_name)
-            print(f"[+] '{package_name}' installed successfully!\n")
-            return True
-        except ImportError:
-            pass
-
-    return False
-
-
-def ensure_core_dependencies():
-    """Checks for required core packages and auto-installs them via pip/pipx/uv if missing."""
-    if hasattr(sys.stdout, "reconfigure"):
-        try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
-
-    missing = []
-    for module_name, package_name in CORE_PACKAGES.items():
-        try:
-            importlib.import_module(module_name)
-        except ImportError:
-            missing.append(package_name)
-
-    if missing:
-        print(f"[*] Missing dependencies detected: {', '.join(missing)}")
-        print("[*] Automatically installing required packages...")
-        if install_packages(missing):
-            print("[+] All core dependencies installed successfully!\n")
-        else:
-            print("[!] Warning: Automatic dependency installation failed.", file=sys.stderr)
-            if "pipx" in sys.prefix.lower():
-                print(f"[!] Please manually run: pipx inject bad-apple-in-terminal {' '.join(missing)}", file=sys.stderr)
-            else:
-                print(f"[!] Please manually run: pip install {' '.join(missing)}", file=sys.stderr)
-
-
-ensure_core_dependencies()
-
-import colorama
-
-from audio import create_audio_player
 from cache import BinaryCacheBuilder, BinaryCacheReader
 from download import (
+    DEFAULT_AUDIO_NAME,
     DEFAULT_CACHE_NAME,
     download_audio,
     download_binary_cache,
     download_video,
     get_asset_path,
 )
-from input import (
-    create_input_handler,
-    enter_alternate_screen,
-    flush_input_buffer,
-    restore_terminal,
-)
+from platforms import get_platform
 from renderer import TerminalRenderer
 from ui import render_status_bar
 
@@ -148,418 +34,164 @@ from ui import render_status_bar
 def play_bad_apple(
     mode: str = "ascii",
     enable_audio: bool = True,
-    target_width: int = None,
-    target_height: int = None,
-    use_cache: bool = True,
-):
-    """Main playback loop for the Bad Apple terminal player."""
-    video_path = get_asset_path("bad_apple.mp4")
-    audio_path = get_asset_path("bad_apple.mp3")
+    target_width: int | None = None,
+    target_height: int | None = None,
+) -> None:
+    """
+    Main playback loop driven strictly by the Audio Master Clock.
+    Entirely OS-agnostic, zero-CPU binary cache rendering, zero OpenCV runtime dependency.
+    """
     cache_path = get_asset_path(DEFAULT_CACHE_NAME)
+    audio_path = get_asset_path(DEFAULT_AUDIO_NAME)
 
-    use_binary_cache = False
-
-    if use_cache:
-        if os.path.exists(cache_path):
-            use_binary_cache = True
-        elif not os.path.exists(video_path):
-            # First-run setup: neither cache nor video exists yet.
-            # Ask the user if interactive, otherwise default to yes.
-            build_cache_choice = True
-            if sys.stdin.isatty():
-                try:
-                    ans = (
-                        input("Download optimized binary playback cache? (recommended: zero-CPU, ~7.7 MB) [Y/n]: ")
-                        .strip()
-                        .lower()
-                    )
-                    if ans in ("n", "no"):
-                        build_cache_choice = False
-                except (EOFError, KeyboardInterrupt):
-                    print()
-                    return
-
-            if build_cache_choice:
-                cache_downloaded = False
-                # Try downloading pre-built cache from CDN first (fastest, lightweight)
-                try:
-                    download_binary_cache(cache_path)
-                    cache_downloaded = True
-                    use_binary_cache = True
-                except Exception as e:
-                    print(f"[*] Pre-built cache download unavailable ({e}). Falling back to local build...")
-
-                # If CDN download didn't work (e.g. offline), build from video locally
-                if not cache_downloaded:
-                    if not ensure_package("cv2", "opencv-python-headless"):
-                        print("[!] Warning: OpenCV is required to build cache locally but could not be installed.", file=sys.stderr)
-                        use_binary_cache = False
-                    else:
-                        print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
-                        download_video(video_path)
-                        print(f"[*] Building BAPB binary cache into '{cache_path}'...")
-
-                        def progress(cur, total, el):
-                            pct = (cur / total) * 100
-                            fps_val = cur / el if el > 0 else 0
-                            sys.stdout.write(f"\r[*] Encoding frames: {cur}/{total} [{pct:.1f}%] ({fps_val:.0f} fps)")
-                            sys.stdout.flush()
-
-                        try:
-                            BinaryCacheBuilder.build_cache(video_path, cache_path, progress_callback=progress)
-                            print("\n[+] Binary cache successfully created!")
-                            use_binary_cache = True
-                        except Exception as err:
-                            print(f"\n[!] Failed to build binary cache ({err}). Falling back to MP4.", file=sys.stderr)
-                            use_binary_cache = False
-            else:
-                use_binary_cache = False
-        else:
-            # Video already exists and cache does not: user previously chose real-time video playback mode
-            use_binary_cache = False
-
-    if not use_binary_cache:
-        if not ensure_package("cv2", "opencv-python-headless"):
-            print("[!] Warning: 'opencv-python-headless' is required for real-time MP4 playback but could not be installed.", file=sys.stderr)
-            if "pipx" in sys.prefix.lower():
-                print("[!] Tip: Under pipx, install it with: pipx inject bad-apple-in-terminal opencv-python-headless", file=sys.stderr)
-            else:
-                print("[!] Please manually install it via: pip install opencv-python-headless", file=sys.stderr)
-
-            # Defensive fallback to CDN binary cache (zero OpenCV required)
-            print("[*] Automatically falling back to pre-rendered binary playback (zero OpenCV required)...")
-            try:
-                download_binary_cache(cache_path)
-                use_binary_cache = True
-            except Exception as e:
-                print(f"[!] Error: Could not download binary cache either ({e}). Exiting.", file=sys.stderr)
-                return
-
-    if use_binary_cache:
+    # 1. Ensure binary cache asset is available
+    if not os.path.exists(cache_path):
+        print(f"[*] Bad Apple binary cache not found locally. Downloading to '{cache_path}'...")
         try:
-            with BinaryCacheReader(cache_path) as probe:
-                fps = probe.fps
-                total_frames = probe.total_frames
-                duration = probe.duration
+            download_binary_cache(cache_path)
         except Exception as e:
-            print(f"[!] Error: Failed to load binary cache ({e}). Exiting.", file=sys.stderr)
-            return
-    else:
-        import cv2
-
-        # Verify / download video file
-        if not os.path.exists(video_path):
-            print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
-            download_video(video_path)
-
-        # Probe video metadata
-        probe_cap = cv2.VideoCapture(video_path)
-        if not probe_cap.isOpened():
-            print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
+            print(f"[!] Error: Failed to download binary cache ({e}). Exiting.", file=sys.stderr)
             return
 
-        fps = probe_cap.get(cv2.CAP_PROP_FPS) or 30.0
-        total_frames = int(probe_cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 6573
-        duration = total_frames / fps
-        probe_cap.release()
-
-    # Verify / download audio file
+    # 2. Ensure audio asset is available if audio is enabled
     if enable_audio and not os.path.exists(audio_path):
-        print(f"[*] Bad Apple audio not found, downloading to '{audio_path}'...")
-        download_audio(audio_path)
-
-    # Initialize terminal
-    colorama.init()
-    if hasattr(sys.stdout, "reconfigure"):
+        print(f"[*] Bad Apple audio not found locally. Downloading to '{audio_path}'...")
         try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+            download_audio(audio_path)
+        except Exception as e:
+            print(f"[*] Warning: Audio download failed ({e}). Proceeding muted.", file=sys.stderr)
+            enable_audio = False
 
-    atexit.register(restore_terminal)
-
-    def _handle_exit_signal(signum, frame):
-        restore_terminal()
-        sys.exit(0)
-
-    for sig_name in ("SIGTERM", "SIGHUP"):
-        sig = getattr(signal, sig_name, None)
-        if sig is not None:
-            try:
-                signal.signal(sig, _handle_exit_signal)
-            except Exception:
-                pass
+    # 3. Read metadata from binary cache container
+    try:
+        with BinaryCacheReader(cache_path) as probe:
+            fps = probe.fps
+            total_frames = probe.total_frames
+            duration = probe.duration
+    except Exception as e:
+        print(f"[!] Error: Corrupt or invalid binary cache ({e}). Exiting.", file=sys.stderr)
+        return
 
     renderer = TerminalRenderer(mode=mode, target_width=target_width, target_height=target_height)
-    audio_player = create_audio_player(audio_path) if enable_audio else None
-
     mode_list = TerminalRenderer.MODES
     mode_idx = mode_list.index(mode) if mode in mode_list else 0
 
     while True:
-        # Switch to Alternate Screen Buffer, hide cursor, and clear screen & scrollback
-        enter_alternate_screen()
+        # Initialize OS-isolated platform driver bundle
+        platform = get_platform(audio_path=audio_path if enable_audio else None, no_audio=not enable_audio)
 
-        # Start / restart audio player
-        if audio_player:
-            audio_player.start()
+        platform.terminal.enter_fullscreen()
+        platform.audio.start()
 
-        cache_reader = BinaryCacheReader(cache_path) if use_binary_cache else None
-        if not use_binary_cache:
-            import cv2
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                print(f"[!] Error: Unable to open '{video_path}'.", file=sys.stderr)
-                break
-        else:
-            cap = None
-
-        flush_input_buffer()
-        last_terminal_size = shutil.get_terminal_size()
-        input_handler = create_input_handler()
-
-        current_frame_idx = 0
-        playback_start_time = time.perf_counter()
-        is_paused = False
-        pause_start_time = 0.0
         finished_naturally = False
-        last_raw_frame = None
-        is_raw_binary = bool(cache_reader)
-        needs_redraw = False
+        is_paused = False
+        needs_redraw = True
+        last_rendered_frame_idx = -1
 
         try:
-            while True:
-                # 1. Process keyboard inputs (Cross-platform)
-                key = input_handler.get_key()
-                if key == "RIGHT":  # Seek +5s
-                    new_frame = min(total_frames - 1, current_frame_idx + int(5 * fps))
-                    if cap:
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
-                    current_frame_idx = new_frame
-                    now = time.perf_counter()
-                    playback_start_time = now - (current_frame_idx / fps)
-                    if is_paused:
-                        pause_start_time = now
-                        if cache_reader:
-                            try:
-                                last_raw_frame = cache_reader.get_frame(current_frame_idx)
-                                needs_redraw = True
-                            except Exception:
-                                pass
-                        elif cap:
-                            ret, frame = cap.read()
-                            if ret:
-                                last_raw_frame = frame
-                                cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
-                                needs_redraw = True
-                    if audio_player:
-                        audio_player.seek(current_frame_idx / fps)
-                        if not is_paused:
-                            audio_pos = audio_player.get_time()
-                            if audio_pos is not None:
-                                playback_start_time = time.perf_counter() - audio_pos
-                elif key == "LEFT":  # Seek -5s
-                    new_frame = max(0, current_frame_idx - int(5 * fps))
-                    if cap:
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
-                    current_frame_idx = new_frame
-                    now = time.perf_counter()
-                    playback_start_time = now - (current_frame_idx / fps)
-                    if is_paused:
-                        pause_start_time = now
-                        if cache_reader:
-                            try:
-                                last_raw_frame = cache_reader.get_frame(current_frame_idx)
-                                needs_redraw = True
-                            except Exception:
-                                pass
-                        elif cap:
-                            ret, frame = cap.read()
-                            if ret:
-                                last_raw_frame = frame
-                                cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
-                                needs_redraw = True
-                    if audio_player:
-                        audio_player.seek(current_frame_idx / fps)
-                        if not is_paused:
-                            audio_pos = audio_player.get_time()
-                            if audio_pos is not None:
-                                playback_start_time = time.perf_counter() - audio_pos
-                elif key == "QUIT":  # Exit (Q or ESC)
-                    break
-                elif key == "SPACE":  # Pause / Resume
-                    is_paused = not is_paused
-                    if is_paused:
-                        pause_start_time = time.perf_counter()
-                        if audio_player:
-                            audio_player.pause()
-                        needs_redraw = True
-                    else:
-                        if audio_player:
-                            audio_player.resume()
-                            audio_pos = audio_player.get_time()
-                            if audio_pos is not None:
-                                playback_start_time = time.perf_counter() - audio_pos
+            with BinaryCacheReader(cache_path) as cache_reader:
+                while True:
+                    # 1. Non-blocking keyboard input polling
+                    key = platform.input.poll_key()
+                    if key:
+                        if key == "QUIT":
+                            break
+                        elif key == "SPACE":
+                            is_paused = not is_paused
+                            if is_paused:
+                                platform.audio.pause()
                             else:
-                                pause_duration = time.perf_counter() - pause_start_time
-                                playback_start_time += pause_duration
-                        else:
-                            pause_duration = time.perf_counter() - pause_start_time
-                            playback_start_time += pause_duration
-                        needs_redraw = True
-                elif key == "MODE":  # Switch mode
-                    mode_idx = (mode_idx + 1) % len(mode_list)
-                    renderer.mode = mode_list[mode_idx]
-                    if is_paused:
-                        needs_redraw = True
-                elif key == "RESTART":  # Restart from beginning
-                    if cap:
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    current_frame_idx = 0
-                    playback_start_time = time.perf_counter()
-                    pause_start_time = playback_start_time
-                    if audio_player:
-                        audio_player.seek(0)
-                        if not is_paused:
-                            audio_player.resume()
-                            audio_pos = audio_player.get_time()
-                            if audio_pos is not None:
-                                playback_start_time = time.perf_counter() - audio_pos
-                    if is_paused:
-                        if cache_reader:
-                            try:
-                                last_raw_frame = cache_reader.get_frame(0)
-                                needs_redraw = True
-                            except Exception:
-                                pass
-                        elif cap:
-                            ret, frame = cap.read()
-                            if ret:
-                                last_raw_frame = frame
-                                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                                needs_redraw = True
+                                platform.audio.resume()
+                            needs_redraw = True
+                        elif key == "LEFT":
+                            new_time = max(0.0, platform.audio.get_pos() - 5.0)
+                            platform.audio.seek(new_time)
+                            needs_redraw = True
+                        elif key == "RIGHT":
+                            new_time = min(duration - 0.1, platform.audio.get_pos() + 5.0)
+                            platform.audio.seek(new_time)
+                            needs_redraw = True
+                        elif key == "MODE":
+                            mode_idx = (mode_idx + 1) % len(mode_list)
+                            renderer.mode = mode_list[mode_idx]
+                            needs_redraw = True
+                        elif key == "RESTART":
+                            platform.audio.seek(0.0)
+                            if not is_paused:
+                                platform.audio.resume()
+                            needs_redraw = True
 
-                # If paused, handle resize and immediate frame redrawing
-                if is_paused:
-                    current_terminal_size = shutil.get_terminal_size()
-                    if current_terminal_size != last_terminal_size:
-                        last_terminal_size = current_terminal_size
+                    # 2. Responsive Terminal Resizing (detects size change and clears ghost characters)
+                    if platform.terminal.check_resized():
                         sys.stdout.write("\033[H\033[2J\033[3J")
                         sys.stdout.flush()
                         needs_redraw = True
 
-                    if needs_redraw and last_raw_frame is not None:
-                        if is_raw_binary:
-                            rendered_str = renderer.render_binary_frame(last_raw_frame)
-                        else:
-                            rendered_str = renderer.render_frame(last_raw_frame)
+                    # 3. Audio Master Clock query
+                    current_time = platform.audio.get_pos()
+                    if current_time >= duration:
+                        finished_naturally = True
+                        break
 
+                    # 4. Paused state handling
+                    if is_paused:
+                        if needs_redraw:
+                            frame_idx = min(total_frames - 1, max(0, int(current_time * fps)))
+                            bin_frame = cache_reader.get_frame(frame_idx)
+                            cols, _ = platform.terminal.get_size()
+                            rendered_str = renderer.render_binary_frame(bin_frame)
+                            status_bar = render_status_bar(
+                                current_frame=frame_idx,
+                                total_frames=total_frames,
+                                fps=fps,
+                                duration=duration,
+                                mode=renderer.mode,
+                                terminal_columns=cols,
+                                is_paused=True,
+                            )
+                            sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
+                            sys.stdout.flush()
+                            needs_redraw = False
+                        time.sleep(0.02)
+                        continue
+
+                    # 5. Active playback: calculate current frame locked to audio clock (automatic frame-drop)
+                    frame_idx = int(current_time * fps)
+                    if frame_idx >= total_frames:
+                        finished_naturally = True
+                        break
+
+                    if frame_idx != last_rendered_frame_idx or needs_redraw:
+                        bin_frame = cache_reader.get_frame(frame_idx)
+                        cols, _ = platform.terminal.get_size()
+                        rendered_str = renderer.render_binary_frame(bin_frame)
                         status_bar = render_status_bar(
-                            current_frame=current_frame_idx,
+                            current_frame=frame_idx,
                             total_frames=total_frames,
                             fps=fps,
                             duration=duration,
                             mode=renderer.mode,
-                            terminal_columns=current_terminal_size.columns,
-                            is_paused=True,
+                            terminal_columns=cols,
+                            is_paused=False,
                         )
                         sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
                         sys.stdout.flush()
+                        last_rendered_frame_idx = frame_idx
                         needs_redraw = False
 
-                    time.sleep(0.02)
-                    continue
-
-                # 2. Audio-Video Synchronization (Audio Master Clock)
-                audio_pos = audio_player.get_time() if (audio_player and not is_paused) else None
-                if audio_pos is not None:
-                    target_frame_idx = int(audio_pos * fps)
-                    playback_start_time = time.perf_counter() - audio_pos
-                else:
-                    now = time.perf_counter()
-                    elapsed = now - playback_start_time
-                    target_frame_idx = int(elapsed * fps)
-
-                if target_frame_idx >= total_frames:
-                    finished_naturally = True
-                    break
-
-                # If lagging behind the target frame, skip frames
-                if target_frame_idx > current_frame_idx + 1:
-                    if cap:
-                        if target_frame_idx - current_frame_idx > 5:
-                            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_idx)
-                            current_frame_idx = target_frame_idx
-                        else:
-                            while current_frame_idx < target_frame_idx:
-                                cap.grab()
-                                current_frame_idx += 1
-                    else:
-                        current_frame_idx = target_frame_idx
-
-                if cache_reader:
-                    if current_frame_idx >= total_frames:
-                        finished_naturally = True
-                        break
-                    bin_frame = cache_reader.get_frame(current_frame_idx)
-                    current_frame_idx += 1
-                    last_raw_frame = bin_frame
-                    rendered_str = renderer.render_binary_frame(bin_frame)
-                else:
-                    ret, frame = cap.read()
-                    if not ret:
-                        finished_naturally = True
-                        break
-                    current_frame_idx += 1
-                    last_raw_frame = frame
-                    rendered_str = renderer.render_frame(frame)
-
-                # 3. Check for terminal resize (Responsive Resizing)
-                current_terminal_size = shutil.get_terminal_size()
-                if current_terminal_size != last_terminal_size:
-                    last_terminal_size = current_terminal_size
-                    # Reset cursor, clear visible viewport and erase scrollback history
-                    sys.stdout.write("\033[H\033[2J\033[3J")
-                    sys.stdout.flush()
-
-                # 4. Status Bar with Visual Scrubber
-                status_bar = render_status_bar(
-                    current_frame=current_frame_idx,
-                    total_frames=total_frames,
-                    fps=fps,
-                    duration=duration,
-                    mode=renderer.mode,
-                    terminal_columns=current_terminal_size.columns,
-                    is_paused=is_paused,
-                )
-
-                # 5. Write buffer to terminal with clean blank separator line (Flicker-Free)
-                sys.stdout.write(f"\033[H{rendered_str}\n\033[K\n{status_bar}\033[J")
-                sys.stdout.flush()
-
-                # 6. Precision Framerate Timing
-                next_frame_time = current_frame_idx / fps
-                remaining = next_frame_time - (time.perf_counter() - playback_start_time)
-                if remaining > 0.002:
-                    time.sleep(remaining)
+                    # 6. Micro sleep to avoid 100% CPU busy-wait
+                    time.sleep(0.002)
 
         except KeyboardInterrupt:
             finished_naturally = False
         finally:
-            if cache_reader:
-                cache_reader.close()
-            if cap:
-                cap.release()
-            if audio_player:
-                audio_player.stop()
-            restore_terminal()
+            platform.cleanup()
 
         if not finished_naturally:
             print("\n[✓] Playback ended.")
             break
 
         print("\n[✓] Playback finished.")
-        flush_input_buffer()
         try:
             choice = input("Replay? [y/n]: ").strip().lower()
             if choice in ("y", "yes"):
@@ -603,12 +235,7 @@ def main():
     parser.add_argument(
         "--build-cache",
         action="store_true",
-        help="Pre-renders and builds the bad_apple.bin binary cache for zero-CPU playback and exits",
-    )
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="Forces real-time OpenCV MP4 decoding, ignoring any binary cache",
+        help="Developer utility: builds bad_apple.bin from MP4 using OpenCV and exits",
     )
     args = parser.parse_args()
 
@@ -618,24 +245,26 @@ def main():
         parser.error("--height must be at least 2")
 
     if args.build_cache:
-        if not ensure_package("cv2", "opencv-python-headless"):
+        try:
+            import cv2  # noqa: F401
+        except ImportError:
             print("[!] Error: OpenCV ('opencv-python-headless') is required to build binary cache from MP4.", file=sys.stderr)
-            if "pipx" in sys.prefix.lower():
-                print("[!] Tip: Under pipx, install it with: pipx inject bad-apple-in-terminal opencv-python-headless", file=sys.stderr)
-            else:
-                print("[!] Please manually install it via: pip install opencv-python-headless", file=sys.stderr)
             return
+
         video_path = get_asset_path("bad_apple.mp4")
         if not os.path.exists(video_path):
             print(f"[*] Bad Apple video not found, downloading to '{video_path}'...")
             download_video(video_path)
+
         cache_path = get_asset_path(DEFAULT_CACHE_NAME)
         print(f"[*] Building BAPB binary cache into '{cache_path}'...")
+
         def progress(cur, total, el):
             pct = (cur / total) * 100
             fps_val = cur / el if el > 0 else 0
             sys.stdout.write(f"\r[*] Encoding frames: {cur}/{total} [{pct:.1f}%] ({fps_val:.0f} fps)")
             sys.stdout.flush()
+
         BinaryCacheBuilder.build_cache(video_path, cache_path, progress_callback=progress)
         print("\n[+] Binary cache successfully created!")
         return
@@ -645,7 +274,6 @@ def main():
         enable_audio=not args.no_audio,
         target_width=args.width,
         target_height=args.height,
-        use_cache=not args.no_cache,
     )
 
 
