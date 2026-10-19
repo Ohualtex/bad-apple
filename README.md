@@ -14,7 +14,9 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
   - `halfblock`: 2x vertical resolution using half-block characters (`▀`, `▄`) for crystal-clear silhouettes.
 - **Zero-Setup & Featherlight Footprint:** Installs in seconds without bloated dependencies! Automatically provisions media assets with MD5 checksum verification.
 - **Zero-CPU Binary Cache Engine (BAPB v1):** Plays from a pre-rendered, zlib-compressed 1-bit binary cache (`bad_apple.bin`, ~7.7 MB) for <0.5% CPU consumption and instantaneous (0.04 ms) seeking!
-- **Cross-Platform Audio Engine:** Backed by `pygame.mixer` for distortion-free pause/resume and zero-latency seeking, with fallback to native OS drivers on Windows (`winmm.dll` MCI), macOS (`afplay`), and Linux (`ffplay`/`mpv`/`aplay`).
+- **Audio Master Clock Synchronization:** Playback framerate and scrubbing are locked to the audio hardware master clock with automatic frame-drop compensation for drift-free A-V synchronization.
+- **OS-Isolated Driver Architecture:** Decoupled platform drivers (`platforms/windows`, `platforms/macos`, `platforms/linux`) managing terminal ANSI/VT100 environments, non-blocking raw inputs, and hardware audio engines.
+- **Cross-Platform Audio Engine:** Backed by `pygame.mixer` (with 4096 CoreAudio buffer on macOS) and native OS fallbacks on Windows (`winmm.dll` MCI), macOS (`ffplay` with process signals), and Linux (`paplay`/`pw-play`/`aplay`/`ffplay`/`mpv`).
 - **Flicker-Free & Ghost-Free Rendering:** Employs Alternate Screen Buffer (`\033[?1049h`), scrollback buffer purging, and dynamic resizing for a pristine, clean display at 30 FPS.
 - **Dynamic Sizing & Visual Scrubber:** Automatically senses terminal dimensions, preserves the 4:3 aspect ratio, centers output, and displays an interactive progress bar.
 
@@ -62,9 +64,6 @@ bad-apple --mode ascii
 
 # Pre-render compact binary cache for zero-CPU playback and instantaneous seek
 bad-apple --build-cache
-
-# Force real-time OpenCV decoding instead of binary cache
-bad-apple --no-cache
 
 # Disable audio
 bad-apple --no-audio
