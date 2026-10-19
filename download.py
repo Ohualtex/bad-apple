@@ -10,20 +10,18 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-VIDEO_URL = "https://archive.org/download/niconico-sm8628149/sm8628149.mp4"
-VIDEO_MD5 = "187d905116db5e217338da08a67d1caf"
-DEFAULT_VIDEO_NAME = "bad_apple.mp4"
+GOLDEN_ASSETS_BASE_URL = "https://github.com/Ohualtex/bad-apple/releases/download/golden-assets"
 
-AUDIO_URL = "https://raw.githubusercontent.com/reimunyancat/badapple-with-ascii/master/bad_apple.mp3"
-AUDIO_MD5 = "fd4c1a0b0ead09b5c0ab58e4b1016317"
+DEFAULT_VIDEO_NAME = "bad_apple.mp4"
+VIDEO_URL = f"{GOLDEN_ASSETS_BASE_URL}/{DEFAULT_VIDEO_NAME}"
+VIDEO_MD5 = "187d905116db5e217338da08a67d1caf"
+
 DEFAULT_AUDIO_NAME = "bad_apple.mp3"
+AUDIO_URL = f"{GOLDEN_ASSETS_BASE_URL}/{DEFAULT_AUDIO_NAME}"
+AUDIO_MD5 = "fd4c1a0b0ead09b5c0ab58e4b1016317"
 
 DEFAULT_CACHE_NAME = "bad_apple.bin"
-CACHE_URLS = [
-    "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.2/bad_apple.bin",
-    "https://github.com/Ohualtex/bad-apple/releases/download/v1.1.1/bad_apple.bin",
-]
-CACHE_URL = CACHE_URLS[0]
+CACHE_URL = f"{GOLDEN_ASSETS_BASE_URL}/{DEFAULT_CACHE_NAME}"
 CACHE_MD5 = "bfb923d8e071539a4b23a9a9fabe6b04"
 
 
@@ -152,7 +150,7 @@ def download_audio(destination: str | None = None) -> str:
 def download_binary_cache(destination: str | None = None) -> str:
     """Downloads the pre-rendered Bad Apple BAPB binary cache file."""
     dest = destination or get_asset_path(DEFAULT_CACHE_NAME)
-    return _download_file(CACHE_URLS, dest, CACHE_MD5, "Bad Apple Binary Cache")
+    return _download_file(CACHE_URL, dest, CACHE_MD5, "Bad Apple Binary Cache")
 
 
 def download_all():
