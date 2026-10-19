@@ -46,7 +46,7 @@ Issues = "https://github.com/Ohualtex/bad-apple/issues"
 
 [tool.setuptools]
 py-modules = ["main", "download", "renderer", "ui", "cache"]
-packages = ["audio", "input"]
+packages = ["platforms", "platforms.windows", "platforms.macos", "platforms.linux"]
 
 [tool.ruff.lint.per-file-ignores]
 "main.py" = ["E402"]
