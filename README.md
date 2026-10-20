@@ -54,6 +54,8 @@ Just clone and run! Required dependencies and media files are automatically prep
 git clone https://github.com/Ohualtex/bad-apple.git
 cd bad-apple
 python main.py
+# or run as a Python module:
+python -m bad_apple
 ```
 
 ### Options & Flags
