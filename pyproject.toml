@@ -35,8 +35,8 @@ dependencies = [
 pygame = ["pygame>=2.5.0"]
 
 [project.scripts]
-bad-apple = "main:main"
-badapple = "main:main"
+bad-apple = "bad_apple.main:main"
+badapple = "bad_apple.main:main"
 
 [project.urls]
 Homepage = "https://github.com/Ohualtex/bad-apple"
@@ -44,9 +44,14 @@ Repository = "https://github.com/Ohualtex/bad-apple.git"
 Issues = "https://github.com/Ohualtex/bad-apple/issues"
 
 [tool.setuptools]
-py-modules = ["main", "download", "renderer", "ui", "cache"]
-packages = ["platforms", "platforms.windows", "platforms.macos", "platforms.linux"]
+packages = [
+    "bad_apple",
+    "bad_apple.platforms",
+    "bad_apple.platforms.windows",
+    "bad_apple.platforms.macos",
+    "bad_apple.platforms.linux",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"main.py" = ["E402"]
+"bad_apple/main.py" = ["E402"]
 
