@@ -16,7 +16,7 @@ Flicker-free, audio-synced Bad Apple!! player for your terminal.
 - **Zero-CPU Binary Cache Engine (BAPB v1):** Plays from a pre-rendered, zlib-compressed 1-bit binary cache (`bad_apple.bin`, ~7.7 MB) for <0.5% CPU consumption and instantaneous (0.04 ms) seeking!
 - **Audio Master Clock Synchronization:** Playback framerate and scrubbing are locked to the audio hardware master clock with automatic frame-drop compensation for drift-free A-V synchronization.
 - **OS-Isolated Driver Architecture:** Decoupled platform drivers (`platforms/windows`, `platforms/macos`, `platforms/linux`) managing terminal ANSI/VT100 environments, non-blocking raw inputs, and hardware audio engines.
-- **Cross-Platform Audio Engine:** Backed by `pygame.mixer` (with 4096 CoreAudio buffer on macOS) and native OS fallbacks on Windows (`winmm.dll` MCI), macOS (`ffplay` with process signals), and Linux (`paplay`/`pw-play`/`aplay`/`ffplay`/`mpv`).
+- **Cross-Platform Audio Engine:** Backed by `pygame.mixer` (with 4096 CoreAudio buffer on macOS) and native OS fallbacks on Windows (`winmm.dll` MCI), macOS (`afplay` / `ffplay`), and Linux (`ffplay` / `mpv` / `mpg123` / `mplayer` / `pw-play` / `paplay`).
 - **Flicker-Free & Ghost-Free Rendering:** Employs Alternate Screen Buffer (`\033[?1049h`), scrollback buffer purging, and dynamic resizing for a pristine, clean display at 30 FPS.
 - **Dynamic Sizing & Visual Scrubber:** Automatically senses terminal dimensions, preserves the 4:3 aspect ratio, centers output, and displays an interactive progress bar.
 
