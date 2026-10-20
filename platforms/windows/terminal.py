@@ -21,16 +21,27 @@ class WindowsTerminalManager(BaseTerminalManager):
         self._old_mode: int | None = None
         self._last_size: tuple[int, int] = (80, 24)
         self._kernel32 = getattr(ctypes, "windll", None) and getattr(ctypes.windll, "kernel32", None)
+        if self._kernel32:
+            try:
+                self._kernel32.GetStdHandle.argtypes = [ctypes.c_long]
+                self._kernel32.GetStdHandle.restype = ctypes.c_void_p
+                self._kernel32.GetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+                self._kernel32.GetConsoleMode.restype = ctypes.c_bool
+                self._kernel32.SetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+                self._kernel32.SetConsoleMode.restype = ctypes.c_bool
+            except Exception:
+                pass
 
     def enter_fullscreen(self) -> None:
         """Enables VT100 processing, enters Alternate Screen Buffer, and hides cursor."""
         if self._kernel32:
             try:
                 h_out = self._kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-                mode = ctypes.c_ulong()
-                if self._kernel32.GetConsoleMode(h_out, ctypes.byref(mode)):
-                    self._old_mode = mode.value
-                    self._kernel32.SetConsoleMode(h_out, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+                if h_out and h_out != ctypes.c_void_p(-1).value:
+                    mode = ctypes.c_ulong()
+                    if self._kernel32.GetConsoleMode(h_out, ctypes.byref(mode)):
+                        self._old_mode = mode.value
+                        self._kernel32.SetConsoleMode(h_out, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
             except Exception:
                 pass
 
@@ -69,7 +80,8 @@ class WindowsTerminalManager(BaseTerminalManager):
         if self._kernel32 and self._old_mode is not None:
             try:
                 h_out = self._kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-                self._kernel32.SetConsoleMode(h_out, self._old_mode)
+                if h_out and h_out != ctypes.c_void_p(-1).value:
+                    self._kernel32.SetConsoleMode(h_out, self._old_mode)
                 self._old_mode = None
             except Exception:
                 pass

@@ -2,7 +2,11 @@
 Windows console keyboard input listener using msvcrt.
 """
 
-import msvcrt
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
 from ..base import BaseInputHandler
 
 
@@ -16,7 +20,7 @@ class WindowsInputHandler(BaseInputHandler):
         Polls for available keystrokes non-blockingly.
         Returns normalized action tokens: SPACE, LEFT, RIGHT, MODE, RESTART, QUIT.
         """
-        if not msvcrt.kbhit():
+        if msvcrt is None or not msvcrt.kbhit():
             return None
 
         try:
@@ -26,8 +30,6 @@ class WindowsInputHandler(BaseInputHandler):
 
         # Two-byte extended keys (Arrow keys, function keys)
         if ch in (b"\x00", b"\xe0"):
-            if not msvcrt.kbhit():
-                return None
             try:
                 code = msvcrt.getch()
             except Exception:
@@ -42,6 +44,10 @@ class WindowsInputHandler(BaseInputHandler):
             elif code == b"P":  # Down arrow
                 return "DOWN"
             return None
+
+        # Handle Ctrl+C (ASCII ETX) explicitly to prevent swallowing interrupts
+        if ch == b"\x03":
+            raise KeyboardInterrupt
 
         # Single-byte standard ASCII keys
         if ch == b" ":
