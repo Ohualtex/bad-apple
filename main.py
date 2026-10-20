@@ -151,16 +151,20 @@ def play_bad_apple(
                         needs_redraw = True
 
                     # 3. Audio Master Clock query with watchdog fallback
-                    raw_pos = platform.audio.get_pos()
-                    wall_elapsed = time.perf_counter() - clock_anchor_wall
-                    if raw_pos > clock_anchor_pos:
-                        current_time = raw_pos
-                        clock_anchor_pos = raw_pos
+                    if is_paused:
+                        current_time = platform.audio.get_pos()
                         clock_anchor_wall = time.perf_counter()
-                    elif wall_elapsed > 0.5:
-                        current_time = clock_anchor_pos + wall_elapsed
                     else:
-                        current_time = clock_anchor_pos
+                        raw_pos = platform.audio.get_pos()
+                        wall_elapsed = time.perf_counter() - clock_anchor_wall
+                        if raw_pos > clock_anchor_pos:
+                            current_time = raw_pos
+                            clock_anchor_pos = raw_pos
+                            clock_anchor_wall = time.perf_counter()
+                        elif wall_elapsed > 0.5:
+                            current_time = clock_anchor_pos + wall_elapsed
+                        else:
+                            current_time = clock_anchor_pos
 
                     if current_time >= duration:
                         finished_naturally = True
