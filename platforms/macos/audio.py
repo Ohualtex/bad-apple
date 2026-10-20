@@ -153,6 +153,9 @@ class MacOSFFplayAudioPlayer(BaseAudioPlayer):
 
     def _spawn(self, start_sec: float = 0.0) -> None:
         self._teardown_proc()
+        if not self.media_path or not os.path.exists(self.media_path):
+            self.is_open = False
+            return
         cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]
         if start_sec > 0:
             cmd.extend(["-ss", f"{start_sec:.3f}"])
@@ -241,12 +244,124 @@ class MacOSFFplayAudioPlayer(BaseAudioPlayer):
         return self._proc is not None and self._proc.poll() is None and not self.is_paused
 
 
+class MacOSAfplayAudioPlayer(BaseAudioPlayer):
+    """
+    Zero-dependency audio player leveraging native macOS /usr/bin/afplay binary.
+    Provides out-of-the-box audio playback without requiring Pygame or FFmpeg.
+    Uses SIGSTOP/SIGCONT signals for zero-CPU pause and resume.
+    """
+
+    def __init__(self, media_path: str = ""):
+        super().__init__(media_path)
+        self._proc: subprocess.Popen | None = None
+        self._start_perf: float = 0.0
+        self._seek_offset: float = 0.0
+        self._paused_pos: float = 0.0
+
+    @classmethod
+    def is_available(cls) -> bool:
+        return shutil.which("afplay") is not None
+
+    def _spawn(self) -> None:
+        self._teardown_proc()
+        if not self.media_path or not os.path.exists(self.media_path):
+            self._proc = None
+            self.is_open = False
+            return
+
+        cmd = ["afplay", self.media_path]
+        try:
+            self._proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._start_perf = time.perf_counter()
+            self._seek_offset = 0.0
+            self._paused_pos = 0.0
+            self.is_open = True
+            self.is_paused = False
+        except Exception:
+            self._proc = None
+            self.is_open = False
+
+    def _teardown_proc(self) -> None:
+        if self._proc is not None:
+            try:
+                if self.is_paused:
+                    sig_cont = getattr(signal, "SIGCONT", None)
+                    if sig_cont is not None:
+                        os.kill(self._proc.pid, sig_cont)
+                self._proc.terminate()
+                self._proc.wait(timeout=0.5)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            self._proc = None
+
+    def start(self) -> None:
+        if not os.path.exists(self.media_path):
+            return
+        self._spawn()
+
+    def pause(self) -> None:
+        if self._proc and self._proc.poll() is None and not self.is_paused:
+            sig_stop = getattr(signal, "SIGSTOP", None)
+            if sig_stop is not None:
+                try:
+                    self._paused_pos = self.get_pos()
+                    os.kill(self._proc.pid, sig_stop)
+                    self.is_paused = True
+                except Exception:
+                    pass
+
+    def resume(self) -> None:
+        if self._proc and self._proc.poll() is None and self.is_paused:
+            sig_cont = getattr(signal, "SIGCONT", None)
+            if sig_cont is not None:
+                try:
+                    os.kill(self._proc.pid, sig_cont)
+                    self._start_perf = time.perf_counter()
+                    self._seek_offset = self._paused_pos
+                    self.is_paused = False
+                except Exception:
+                    pass
+
+    def seek(self, seconds: float) -> None:
+        # afplay lacks an offset flag; restarting from 0 allows rewinding
+        if seconds <= 0.0:
+            was_paused = self.is_paused
+            self._spawn()
+            if was_paused:
+                self.pause()
+
+    def get_pos(self) -> float:
+        if not self.is_open or self._proc is None:
+            return 0.0
+        if self.is_paused:
+            return self._paused_pos
+        return max(0.0, self._seek_offset + (time.perf_counter() - self._start_perf))
+
+    def stop(self) -> None:
+        self._teardown_proc()
+        self.is_open = False
+        self.is_paused = False
+        self._seek_offset = 0.0
+        self._paused_pos = 0.0
+
+    def is_playing(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None and not self.is_paused
+
+
 def create_macos_audio_player(media_path: str = "") -> BaseAudioPlayer:
     """
     Instantiates the optimal audio player for macOS:
     1. MacOSPygameAudioPlayer (CoreAudio 4096 buffer)
     2. MacOSFFplayAudioPlayer (SIGSTOP/SIGCONT hardware acceleration)
-    3. DummyAudioPlayer (fallback)
+    3. MacOSAfplayAudioPlayer (Native zero-dependency fallback)
+    4. DummyAudioPlayer (fallback)
     """
     if MacOSPygameAudioPlayer.is_available():
         try:
@@ -257,6 +372,12 @@ def create_macos_audio_player(media_path: str = "") -> BaseAudioPlayer:
     if MacOSFFplayAudioPlayer.is_available():
         try:
             return MacOSFFplayAudioPlayer(media_path)
+        except Exception:
+            pass
+
+    if MacOSAfplayAudioPlayer.is_available():
+        try:
+            return MacOSAfplayAudioPlayer(media_path)
         except Exception:
             pass
 

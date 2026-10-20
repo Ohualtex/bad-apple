@@ -126,11 +126,11 @@ class LinuxPygameAudioPlayer(BaseAudioPlayer):
 class LinuxCliAudioPlayer(BaseAudioPlayer):
     """
     Fallback audio player supporting multiple Linux CLI backends:
-    paplay (PulseAudio), pw-play (PipeWire), aplay (ALSA), ffplay, or mpv.
+    paplay (PulseAudio), pw-play (PipeWire), ffplay, mpv, mpg123, or mplayer.
     Uses SIGSTOP/SIGCONT for zero-CPU pause and resume.
     """
 
-    SUPPORTED_BINARIES = ["paplay", "pw-play", "ffplay", "mpv", "aplay"]
+    SUPPORTED_BINARIES = ["paplay", "pw-play", "ffplay", "mpv", "mpg123", "mplayer"]
 
     def __init__(self, media_path: str = "", binary: str = "ffplay"):
         super().__init__(media_path)
@@ -160,12 +160,30 @@ class LinuxCliAudioPlayer(BaseAudioPlayer):
                 cmd.extend([f"--start={start_sec:.3f}"])
             cmd.append(self.media_path)
             return cmd
+        elif self.binary == "mplayer":
+            cmd = ["mplayer", "-really-quiet", "-novideo"]
+            if start_sec > 0:
+                cmd.extend(["-ss", f"{start_sec:.3f}"])
+            cmd.append(self.media_path)
+            return cmd
+        elif self.binary == "mpg123":
+            cmd = ["mpg123", "-q"]
+            if start_sec > 0:
+                # mpg123 -k <frame_offset>; 1 mp3 frame @ 44.1kHz is 1152 samples (~38.28 frames/s)
+                cmd.extend(["-k", str(int(start_sec * 38.28125))])
+            cmd.append(self.media_path)
+            return cmd
         else:
-            # paplay, pw-play, aplay
+            # paplay, pw-play
             return [self.binary, self.media_path]
 
     def _spawn(self, start_sec: float = 0.0) -> None:
         self._teardown_proc()
+        if not self.media_path or not os.path.exists(self.media_path):
+            self._proc = None
+            self.is_open = False
+            return
+
         cmd = self._build_command(start_sec)
 
         try:
@@ -255,7 +273,7 @@ def create_linux_audio_player(media_path: str = "") -> BaseAudioPlayer:
     """
     Instantiates the optimal audio player for Linux:
     1. LinuxPygameAudioPlayer (if pygame is installed)
-    2. LinuxCliAudioPlayer (via paplay, pw-play, ffplay, mpv, aplay)
+    2. LinuxCliAudioPlayer (via paplay, pw-play, ffplay, mpv, mpg123, mplayer)
     3. DummyAudioPlayer (fallback)
     """
     if LinuxPygameAudioPlayer.is_available():
