@@ -4,7 +4,9 @@ High-performance, OS-agnostic terminal playback driven by Audio Master Clock.
 """
 
 import argparse
+import atexit
 import os
+import signal
 import sys
 import time
 
@@ -80,15 +82,28 @@ def play_bad_apple(
         # Initialize OS-isolated platform driver bundle
         platform = get_platform(audio_path=audio_path if enable_audio else None, no_audio=not enable_audio)
 
-        platform.terminal.enter_fullscreen()
-        platform.audio.start()
+        # Register atexit and signal handlers to ensure terminal restoration
+        def _sig_handler(sig, frame):
+            platform.cleanup()
+            sys.exit(0)
+
+        old_sigterm = signal.signal(signal.SIGTERM, _sig_handler) if hasattr(signal, "SIGTERM") else None
+        old_sighup = signal.signal(signal.SIGHUP, _sig_handler) if hasattr(signal, "SIGHUP") else None
+        atexit.register(platform.cleanup)
 
         finished_naturally = False
         is_paused = False
         needs_redraw = True
         last_rendered_frame_idx = -1
 
+        clock_anchor_wall = time.perf_counter()
+        clock_anchor_pos = 0.0
+
         try:
+            platform.terminal.enter_fullscreen()
+            platform.audio.start()
+            clock_anchor_wall = time.perf_counter()
+
             with BinaryCacheReader(cache_path) as cache_reader:
                 while True:
                     # 1. Non-blocking keyboard input polling
@@ -102,14 +117,19 @@ def play_bad_apple(
                                 platform.audio.pause()
                             else:
                                 platform.audio.resume()
+                                clock_anchor_wall = time.perf_counter()
                             needs_redraw = True
                         elif key == "LEFT":
-                            new_time = max(0.0, platform.audio.get_pos() - 5.0)
+                            new_time = max(0.0, current_time - 5.0)
                             platform.audio.seek(new_time)
+                            clock_anchor_pos = new_time
+                            clock_anchor_wall = time.perf_counter()
                             needs_redraw = True
                         elif key == "RIGHT":
-                            new_time = min(duration - 0.1, platform.audio.get_pos() + 5.0)
+                            new_time = min(duration - 0.1, current_time + 5.0)
                             platform.audio.seek(new_time)
+                            clock_anchor_pos = new_time
+                            clock_anchor_wall = time.perf_counter()
                             needs_redraw = True
                         elif key == "MODE":
                             mode_idx = (mode_idx + 1) % len(mode_list)
@@ -117,6 +137,8 @@ def play_bad_apple(
                             needs_redraw = True
                         elif key == "RESTART":
                             platform.audio.seek(0.0)
+                            clock_anchor_pos = 0.0
+                            clock_anchor_wall = time.perf_counter()
                             if not is_paused:
                                 platform.audio.resume()
                             needs_redraw = True
@@ -127,8 +149,18 @@ def play_bad_apple(
                         sys.stdout.flush()
                         needs_redraw = True
 
-                    # 3. Audio Master Clock query
-                    current_time = platform.audio.get_pos()
+                    # 3. Audio Master Clock query with watchdog fallback
+                    raw_pos = platform.audio.get_pos()
+                    wall_elapsed = time.perf_counter() - clock_anchor_wall
+                    if raw_pos > clock_anchor_pos:
+                        current_time = raw_pos
+                        clock_anchor_pos = raw_pos
+                        clock_anchor_wall = time.perf_counter()
+                    elif wall_elapsed > 0.5:
+                        current_time = clock_anchor_pos + wall_elapsed
+                    else:
+                        current_time = clock_anchor_pos
+
                     if current_time >= duration:
                         finished_naturally = True
                         break
@@ -136,7 +168,7 @@ def play_bad_apple(
                     # 4. Paused state handling
                     if is_paused:
                         if needs_redraw:
-                            frame_idx = min(total_frames - 1, max(0, int(current_time * fps)))
+                            frame_idx = max(0, min(total_frames - 1, int(current_time * fps)))
                             bin_frame = cache_reader.get_frame(frame_idx)
                             cols, _ = platform.terminal.get_size()
                             rendered_str = renderer.render_binary_frame(bin_frame)
@@ -156,8 +188,8 @@ def play_bad_apple(
                         continue
 
                     # 5. Active playback: calculate current frame locked to audio clock (automatic frame-drop)
-                    frame_idx = int(current_time * fps)
-                    if frame_idx >= total_frames:
+                    frame_idx = max(0, min(total_frames - 1, int(current_time * fps)))
+                    if current_time >= duration:
                         finished_naturally = True
                         break
 
@@ -185,6 +217,17 @@ def play_bad_apple(
         except KeyboardInterrupt:
             finished_naturally = False
         finally:
+            atexit.unregister(platform.cleanup)
+            if old_sigterm is not None and hasattr(signal, "SIGTERM"):
+                try:
+                    signal.signal(signal.SIGTERM, old_sigterm)
+                except Exception:
+                    pass
+            if old_sighup is not None and hasattr(signal, "SIGHUP"):
+                try:
+                    signal.signal(signal.SIGHUP, old_sighup)
+                except Exception:
+                    pass
             platform.cleanup()
 
         if not finished_naturally:
