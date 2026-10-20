@@ -64,6 +64,10 @@ def verify_md5(file_path: str, expected_md5: str) -> bool:
 
 
 def _download_file(url_or_urls: str | list[str], destination: str, expected_md5: str, label: str) -> str:
+    dest_dir = os.path.dirname(os.path.abspath(destination))
+    if dest_dir:
+        os.makedirs(dest_dir, exist_ok=True)
+
     if os.path.exists(destination):
         print(f"[*] '{destination}' ({label}) already exists. Checking integrity...")
         if verify_md5(destination, expected_md5):
