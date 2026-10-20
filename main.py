@@ -98,6 +98,7 @@ def play_bad_apple(
 
         clock_anchor_wall = time.perf_counter()
         clock_anchor_pos = 0.0
+        current_time = 0.0
 
         try:
             platform.terminal.enter_fullscreen()
